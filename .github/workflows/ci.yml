@@ -59,6 +59,9 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
+      - name: Build Astryx theme
+        run: npm run theme:build
+
       - name: TypeScript check
         run: npm run typecheck
 
