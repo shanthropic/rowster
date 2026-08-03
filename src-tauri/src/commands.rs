@@ -594,3 +594,14 @@ pub async fn tab_discard(app: AppHandle, webview: Webview, id: u64) -> Result<()
     caller::assert_chrome(&webview)?;
     manager(&app).discard(&app, id)
 }
+
+#[tauri::command]
+pub async fn tab_set_visible(
+    app: AppHandle,
+    webview: Webview,
+    id: u64,
+    visible: bool,
+) -> Result<()> {
+    caller::assert_chrome(&webview)?;
+    manager(&app).set_tab_visible(id, visible)
+}

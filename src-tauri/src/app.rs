@@ -78,6 +78,7 @@ pub fn run() {
             commands::find_close,
             commands::tab_mute,
             commands::tab_discard,
+            commands::tab_set_visible,
         ])
         .register_uri_scheme_protocol("favicon", |ctx, request| {
             use tauri::http::{Response, StatusCode, header};
@@ -190,19 +191,6 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
         state.tabs.activate(&app_handle, info.id)?;
     }
     state.tabs.apply_layout(&app_handle)?;
-
-    // TEMP: auto-navigate for overlap reproduction.
-    {
-        let tabs = state.tabs.clone();
-        let handle = app_handle.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-            if let Some(id) = tabs.active_id() {
-                log::info!("TEMP auto-navigate tab {id} to example.com");
-                let _ = tabs.navigate(&handle, id, "https://example.com");
-            }
-        });
-    }
 
     // Keep tab webviews laid out below the chrome on window resizes.
     if let Some(window) = app_handle.get_window(MAIN_WEBVIEW_LABEL) {

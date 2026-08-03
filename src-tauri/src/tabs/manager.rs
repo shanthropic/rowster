@@ -383,6 +383,17 @@ impl TabManager {
         self.emit_snapshot(app)
     }
 
+    /// Explicitly sets the visibility of a single tab webview. Used by chrome
+    /// overlays (menus, find bar) to temporarily hide the active tab so the
+    /// native child webview doesn't paint on top of chrome UI.
+    pub fn set_tab_visible(&self, id: TabId, visible: bool) -> Result<()> {
+        let tabs = lock(&self.inner.tabs)?;
+        let tab = tabs
+            .get(&id)
+            .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+        tab.handle.set_visible(visible)
+    }
+
     /// Hides inactive tabs that have not been used for
     /// `tab_sleep_after_minutes` (0 disables the sweep). Sleeping hides the
     /// webview only — the page keeps running and wakes with no reload.

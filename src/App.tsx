@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { StackItem } from "@astryxdesign/core/Stack";
@@ -42,6 +42,7 @@ import {
   tabActivate,
   tabClose,
   tabCreate,
+  tabSetVisible,
   zoomIn,
   zoomOut,
   zoomReset,
@@ -270,6 +271,38 @@ const [findOpen, setFindOpen] = useState(false);
   useEffect(() => {
     setFindOpen(false);
   }, [activeId]);
+
+  // --- Chrome overlay visibility ------------------------------------------------
+  // Tauri child webviews (tab webviews) always render on top of the main
+  // webview at the OS level.  When a chrome overlay (MoreMenu popover,
+  // FindBar) is open, hide the active tab webview so it doesn't paint on
+  // top of the chrome UI.  When the overlay closes, show it again.
+  const findOpenRef = useRef(findOpen);
+  findOpenRef.current = findOpen;
+
+  useEffect(() => {
+    if (activeId === null) return;
+    const hasOpenPopovers = () =>
+      document.querySelectorAll("[popover]:popover-open").length > 0;
+    const handleToggle = (e: Event) => {
+      const target = e.target as HTMLElement;
+      if (!target.matches?.("[popover]")) return;
+      requestAnimationFrame(() => {
+        const hide = findOpenRef.current || hasOpenPopovers();
+        void tabSetVisible(activeId, !hide);
+      });
+    };
+    document.addEventListener("toggle", handleToggle, true);
+    return () => document.removeEventListener("toggle", handleToggle, true);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (activeId === null) return;
+    const hide =
+      findOpen ||
+      document.querySelectorAll("[popover]:popover-open").length > 0;
+    void tabSetVisible(activeId, !hide);
+  }, [findOpen, activeId]);
 
   const closeFind = useCallback(() => {
     setFindOpen(false);

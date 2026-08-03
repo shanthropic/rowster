@@ -155,6 +155,9 @@ export const tabMute = (id: TabId, muted: boolean) => invoke<void>("tab_mute", {
 
 export const tabDiscard = (id: TabId) => invoke<void>("tab_discard", { id });
 
+export const tabSetVisible = (id: TabId, visible: boolean) =>
+  invoke<void>("tab_set_visible", { id, visible });
+
 /** Diagnostics for the custom titlebar/layout (layout_diag command). */
 export type LayoutDiagArgs = {
   chromeTop: number;
