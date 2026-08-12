@@ -54,9 +54,11 @@ enforce it, and how each invariant is tested.
    absolute paths, and Windows-illegal characters; duplicates become
    `name (1).ext`; destinations always stay inside the configured download
    directory; open/reveal go through the opener plugin only.
-7. **TLS is never bypassed silently.** Certificate errors surface an
-   interstitial; proceeding is an explicit, per-origin decision recorded in
-   logs (origin + error kind only).
+7. **TLS is never bypassed silently.** Certificate errors must never be
+   auto-bypassed. An explicit, per-origin Rowster interstitial is **planned
+   but not yet implemented** (tracked as future work); until then cert errors
+   fall back to the engine default. When implemented, proceeding will be an
+   explicit, per-origin decision recorded in logs (origin + error kind only).
 
 ## Reporting a vulnerability
 

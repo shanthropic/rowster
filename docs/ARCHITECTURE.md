@@ -30,6 +30,9 @@ Single-process. Rust owns **all canonical browser state**; the frontend is a vie
 | `settings.rs` | Validated settings model |
 | `events.rs` | Event-name constants (chrome subscribes; tabs cannot) |
 | `error.rs` | `thiserror` error hierarchy, safe-lock helpers |
+| `model.rs` | Core serde types: `TabInfo`, `BrowserWindowInfo`, `BrowserSnapshot`, `MAIN_WEBVIEW_LABEL` / `TAB_WEBVIEW_PREFIX` |
+| `navlog.rs` | Per-tab navigation log (back/forward derivation) |
+| `state.rs` | `AppState` (settings lock, db handle, managers, channels) |
 
 ## Concurrency rules
 

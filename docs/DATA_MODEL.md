@@ -66,13 +66,13 @@ Key/value with an in-memory validated `Settings` mirror (`src-tauri/src/settings
 |---|---|---|
 | search_engine | string | must be `https://`, must contain `{q}` |
 | home_page | string | `http(s)` or empty |
-| new_tab_behavior | enum | newtab \| home \| blank |
+| new_tab_behavior | enum | new_tab_page \| home \| blank |
 | restore_session | bool | startup behavior |
 | ask_before_download | bool | prompt before each download |
 | download_dir | string/None | absolute path only |
 | theme | enum | system \| light \| dark |
 | zoom_default | f64 | clamped 0.25–5.0 |
-| close_last_tab_action | enum | newtab \| close_window |
+| close_last_tab_action | enum | new_tab \| close_window |
 | history_retention_days | u32 | 0 = keep forever |
 | show_bookmark_bar | bool | |
 | tab_sleep_after_minutes | u32 | |

@@ -36,10 +36,10 @@ For AppImage bundling also: `libfuse2` (or `--appimage-extract-and-run`), and `l
 The Astryx theme is generated before every build/dev run:
 
 ```powershell
-npm run theme:build    # rowsterTheme.ts -> src/theme/rowster.css
+npm run theme:build    # generates src/theme/rowsterTheme.ts
 ```
 
-Commit `src/theme/rowster.css` when the theme source changes. Both `vite.config.ts` and `tauri.conf.json` carry the production CSP (`frame-src`, `img-src favicon:`, `connect-src` policies); keep them in sync.
+Commit `src/theme/rowsterTheme.ts` when the theme source changes. Both `vite.config.ts` and `tauri.conf.json` carry the production CSP (`img-src favicon:`, `connect-src` policies); keep them in sync.
 
 ## Data locations
 

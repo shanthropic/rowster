@@ -39,8 +39,8 @@ Verified against **Tauri 2.11.5 / wry 0.55.1 / tao 0.35.3** (docs.rs, July 2026)
 ## 3. System architecture
 
 ```
-┌──────────────────────────── Browser Window ("browser-{n}", frameless) ──────────────────────────┐
-│  MAIN WEBVIEW (label = window label) — full window — TRUSTED, has capabilities                    │
+┌──────────────────────────── Browser Window ("main", frameless — single window) ─────────────────────┐
+│  MAIN WEBVIEW (label = "main") — full window — TRUSTED, has capabilities                           │
 │  React 19 + TS + Astryx (tokens only, no hand-rolled CSS, no raw <div> layout)                    │
 │  ├ TitleBar (custom window controls; macOS: native traffic lights via titleBarStyle Overlay)     │
 │  ├ TabStrip (drag-drop reorder, pin, mute, spinner, favicon, audio dot, overflow menu)            │
@@ -51,17 +51,17 @@ Verified against **Tauri 2.11.5 / wry 0.55.1 / tao 0.35.3** (docs.rs, July 2026)
 │  └ StatusBar (downloads tray, permission prompts, load errors)                                    │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
       ▲ child webviews (positioned below chrome, Z-above main, hidden when inactive)
-      │ "tab-{uuid}" × N  — UNTRUSTED, ZERO capabilities, devtools off in release
+│  "tab-{id}" × N  — UNTRUSTED, ZERO capabilities, devtools off in release
       │   on_page_load / on_navigation / on_new_window / on_download / on_document_title_changed
       │   + init script (favicon, audio, scroll, form-dirty heuristics — no IPC)
       ▼
 ┌────────────────────────────── Rust core (single process, authoritative) ─────────────────────────┐
 │ app::Builder ─ plugins(log, dialog, opener, notification, clipboard, single-instance)            │
 │   + favicon:// protocol + native menu (macOS) + setup (db → settings → session restore → window) │
-│ tabs::TabManager · windows::WindowManager · session · history · bookmarks · downloads             │
+│ tabs::TabManager · session · history · bookmarks · downloads                                      │
 │ permissions::Broker · settings · address · security::{NavPolicy, CallerGuard} · layout           │
-│ platform::{shortcuts, find, permissions, download_progress, context_menu, load_failure, cert,    │
-│            hard_reload, audio, capabilities}  (cfg-gated modules)                                │
+│ native bindings live in webview/handle.rs (with_webview), find.rs, permissions.rs, downloads.rs  │
+│ (cfg-gated) — there is NO platform/ module; multi-window is planned, not yet implemented         │
 │ db (rusqlite, WAL, user_version) · session.json (atomic, debounced) · app_data dir               │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -84,11 +84,11 @@ Rowster/
 ├─ package.json / package-lock.json      # vite 6, react 19, ts 5, astryx, @tauri-apps/api
 ├─ vite.config.ts · tsconfig.json · index.html
 ├─ src/                                  # TRUSTED chrome frontend
-│  ├─ main.tsx                           # astryx reset.css + astryx.css + theme-neutral, Theme provider
-│  ├─ app/App.tsx                        # window layout shell (titlebar/tabstrip/toolbar/content)
-│  ├─ app/store.ts                       # useSyncExternalStore fed by typed events
-│  ├─ app/events.ts · app/ipc.ts         # typed event bus + invoke wrappers (mirror of Rust types)
-│  ├─ app/types.ts                       # shared TS mirror types
+│  ├─ main.tsx                           # astryx reset.css + astryx.css + codegen rowsterTheme, Theme provider
+│  ├─ App.tsx                            # window layout shell (titlebar/tabstrip/toolbar/content)
+│  ├─ state.ts                           # useSyncExternalStore store fed by typed events
+│  ├─ ipc.ts                             # typed event bus (EV_* constants) + invoke wrappers (mirror of Rust types)
+│  ├─ theme/rowsterTheme.ts              # codegen theme (npm run theme:build)
 │  ├─ components/  TitleBar, TabStrip, Tab (dnd), Toolbar, AddressBar, SecurityIndicator,
 │  │               BookmarkBar, StatusBar, TabContextMenu, OverlayMenu, Favicon,
 │  │               DownloadTray, PermissionPrompt, CertInterstitial, ErrorPage
@@ -97,7 +97,7 @@ Rowster/
 ├─ src-tauri/
 │  ├─ Cargo.toml                         # tauri 2.11 {unstable,devtools} + plugins + platform crates
 │  ├─ tauri.conf.json                    # frameless window, strict CSP, bundle config
-│  ├─ capabilities/main.json             # ONLY chrome webviews ("browser-*") — no tab capability file
+│  ├─ capabilities/main.json             # ONLY chrome webview "main" (webviews:["main"]) — no tab capability file
 │  ├─ icons/                             # generated via `npx tauri icon`
 │  ├─ src/
 │  │  ├─ main.rs → lib.rs                # Builder: plugins, protocol, menu, setup, invoke_handler
@@ -112,7 +112,7 @@ Rowster/
 │  │  ├─ tabs/manager.rs · tab.rs        # TabManager over mockable WebviewHandle trait (+tests)
 │  │  ├─ navlog.rs                       # per-tab navigation log (+tests)
 │  │  ├─ webview/mod.rs · handle.rs      # create_tab_webview, WebviewHandle + Mock (+tests)
-│  │  ├─ windows.rs                      # multi-window create/close/restore
+│  │  ├─ (multi-window planned — not yet implemented; single "main" window only)                     │
 │  │  ├─ session.rs                      # atomic JSON persistence, debounce, recovery (+tests)
 │  │  ├─ db/mod.rs · db/migrations.rs    # rusqlite WAL, user_version (+tests)
 │  │  ├─ repos/{history,bookmarks,downloads,permissions,settings}.rs
@@ -121,7 +121,7 @@ Rowster/
 │  │  ├─ permissions.rs                  # PermissionBroker (+tests)
 │  │  ├─ favicons.rs                     # fetch+resize+cache via favicon:// protocol
 │  │  ├─ menu.rs · shortcuts.rs
-│  │  └─ platform/{mod,windows,macos,linux}.rs   # cfg-gated native bindings + capability detect
+│  │  └─ (native bindings live in webview/handle.rs · find.rs · permissions.rs · downloads.rs)     │
 │  └─ tests/ (integration, security)
 ├─ e2e/                                  # tauri-driver WebDriver smoke tests (CI)
 ├─ .github/workflows/ci.yml              # matrix: windows/macos/ubuntu
@@ -133,19 +133,19 @@ Rowster/
 
 ## 5. Data model
 
-**Rust (serde, stable IDs via `uuid::Uuid`):**
+**Rust (serde, stable IDs via `u64`):**
 ```rust
-Tab        { id: Uuid, webview_label: String, url: Url, title: String,
+Tab        { id: TabId(u64), webview_label: String, url: Url, title: String,
              favicon_url: Option<String>, loading: bool, nav_log: NavigationLog,
              zoom: f64, muted: bool, audio_playing: bool, pinned: bool,
              discarded: bool, scroll_y: f64, has_form_data: bool,
              created_at, last_access, find_state }
-BrowserWindow { id: Uuid, label: String, tabs: Vec<Tab>, active: usize,
+BrowserWindow { id: WindowId(u64), label: String, tabs: Vec<Tab>, active: usize,
                 chrome_height: f64, is_fullscreen: bool, window: Option<Window> }
 Browser    { windows: Vec<BrowserWindow>, active_window: usize,
              recently_closed: VecDeque<ClosedTab> (cap 25) }
-Download   { id: Uuid, tab_id, url, filename, path, mime, total_bytes: Option<u64>,
-             received_bytes: u64, status: Requested|Active|Paused|Completed|Cancelled|Failed,
+Download   { id: i64, tab_id: Option<i64>, url, filename, path, mime, total_bytes: Option<u64>,
+             received_bytes: u64, status: "requested"|"active"|"completed"|"cancelled"|"failed",
              error: Option<String>, created_at, finished_at }
 SitePermission { origin: String, kind: PermissionKind, decision: AllowOnce|AlwaysAllow|Block }
 Settings   { search_engine: Custom(String), home_page: String, new_tab_behavior,
@@ -197,7 +197,7 @@ Discarded ◄─────────── Sleep(30m|mem) ──► Active(w
 - **Sleep (discard)**: capture scroll via `eval` + form-dirty via JS probe, destroy webview, mark `discarded`; restore = create webview + navigate to last URL + `window.scrollTo` + reload-with-form-state note. Pinned tabs exempt. Configurable (default: off / 30 min), memory-pressure aware.
 - **Pin**: unpinned window-relative ordering (pinned cluster left, non-reorderable).
 - **Mute**: `eval` on all `<audio>/<video>` of that tab (engine-side mute flag not exposed cross-platform — documented heuristic).
-- **Reorder**: frontend dnd → `tab_reorder(from, to)` → Rust reorders vec + emits `tab_moved` (session saved).
+- **Reorder**: frontend dnd → `tab_reorder(from, to)` → Rust reorders vec + emits `tabs_snapshot` (session saved).
 - Tab state machine is unit-tested against a `MockWebviewHandle` — no real webview required.
 
 ---
@@ -209,7 +209,7 @@ Discarded ◄─────────── Sleep(30m|mem) ──► Active(w
 - Creation options per tab webview: `initialization_script` (origin-guarded helpers), `devtools(false)` in release, `background_color` = surface token, `zoom_hotkeys_enabled(false)` (we own zoom), `on_page_load/on_navigation/on_new_window/on_download/on_document_title_changed` handlers wired to the manager.
 - Destroy = `webview.close()` + remove label from map + log.
 - **Fullscreen:** F11 → `window.set_fullscreen` + chrome auto-hides chrome regions; content element fullscreen is handled natively by the engine.
-- **Multi-window:** each window gets its own chrome webview + children; `windows.rs` manages labels `browser-{n}`; sessions restore N windows. Dragging tabs between windows (reparent) = documented future work (`reparent` is unstable).
+- **Single window (v1):** one `main` window holds the chrome webview + all tab children (`model.rs`: `MAIN_WINDOW_ID = 1`). Multi-window is planned but not yet implemented; `reparent` between windows remains future work (unstable API).
 
 ---
 
@@ -222,7 +222,7 @@ Discarded ◄─────────── Sleep(30m|mem) ──► Active(w
 4. **Nav policy** (`security::NavPolicy`, unit-tested): reject `file://`, `chrome://`, `tauri://`, `about:` (except `about:blank`), `favicon://`, internal labels, `javascript:`/`data:` in address input; invalid URL → friendly search + toast (`friendly_invalid`).
 5. `on_navigation` in webviews applies the same policy (blocks scripted navigations too).
 6. Back/forward: nav log `push(url)` dedupes redirects (page-load events), `go_back/go_forward` = `eval history.go(±n)`; UI state from log index.
-7. **Failure surfaces**: `loading_failed` event (Win/Linux native hooks; macOS = engine's own error page, documented) → ErrorPage overlay; **cert errors** never auto-bypassed: Windows `ServerCertificateErrorDetected` → explicit interstitial (proceed-once per origin+error recorded), Linux `load-failed` TLS → interstitial with "Open http://" escape, macOS = WebKit default (no bypass). All logged.
+7. **Failure surfaces**: load-failure is surfaced by the engine's own error page (documented per-platform) → ErrorPage overlay. **Cert-error interstitial is NOT yet implemented** (planned): the Rust core currently has no certificate-handling path; until added, cert errors fall back to the engine default and are never auto-bypassed. Tracked as future work.
 8. **Copy/paste URL** via clipboard plugin; "paste and navigate" and "open copied URL in new tab" toolbar actions.
 
 ---
@@ -231,21 +231,21 @@ Discarded ◄─────────── Sleep(30m|mem) ──► Active(w
 
 | Event | Payload |
 |---|---|
-| `tabs_snapshot` | full `Browser` serialization (on connect + after every structural change) |
-| `tab_created / tab_closed / tab_activated / tab_moved / tab_pinned / tab_muted / tab_discarded` | tab id + window id + minimal fields |
-| `url_changed / title_changed / favicon_changed / audio_changed / loading_started / loading_finished / loading_failed` | window, tab, value |
-| `nav_state_changed` | can_go_back/forward, is_loading |
-| `zoom_changed` | window, tab, factor |
-| `window_created / window_closed / fullscreen_changed` | window info |
-| `recently_closed_changed` | list |
-| `download_started / download_progress / download_completed / download_failed / download_cancelled` | Download |
-| `permission_requested` | origin, kind (→ chrome prompt) |
-| `certificate_error` | origin, error kind (→ interstitial) |
-| `settings_changed` | Settings |
-| `session_changed` (debounced) | — |
-| `find_state_changed` | active, query, count, index |
-| `menu_action` | menu id → chrome performs/forwards |
-| `external_link` | URL (mailto:/other → OS handler) |
+| `tabs_snapshot` | full `BrowserSnapshot` (on connect + after every structural change) |
+| `tab_created` / `tab_closed` / `tab_activated` | `TabInfo` |
+| `url_changed` / `title_changed` / `favicon_changed` | `{ id, value }` |
+| `loading_changed` | `{ id, loading }` |
+| `nav_state_changed` | `{ id, can_go_back, can_go_forward }` |
+| `zoom_changed` | `{ id, zoom }` |
+| `settings_changed` | `Settings` |
+| `bookmarks_changed` | `()` (re-query bookmarks) |
+| `download_requested` | `{ id, tab_id, url, filename }` (ask-before prompt) |
+| `download_started` / `download_completed` / `download_failed` / `download_cancelled` | `Download` |
+| `download_open_confirm` | `{ id, path, filename }` (executable open gate) |
+| `permission_requested` | `{ origin, kind }` (→ chrome prompt) |
+| `find_status` | `{ active, query, count, index }` |
+
+All events are emitted only to the `main` webview via `events::emit_to_chrome` (tab webviews hold no capabilities and cannot subscribe).
 
 Anti-race rules: events carry `window_id + tab_id`; handlers in the frontend ignore events not matching the current snapshot's window; Rust drops events for unknown ids. No event carries secrets or auth data.
 
@@ -253,28 +253,28 @@ Anti-race rules: events carry `window_id + tab_id`; handlers in the frontend ign
 
 ## 11. Command surface (chrome → Rust, all caller-guarded)
 
-- **Tabs:** `tab_create(url?, foreground, pinned)`, `tab_activate`, `tab_close`, `tab_close_others`, `tab_close_right`, `tab_duplicate`, `tab_reorder`, `tab_pin`, `tab_mute`, `tab_reopen_closed`, `tab_sleep_now`, `tab_discard_all`
-- **Navigation:** `address_submit(input, new_tab)`, `navigate(url)`, `go_back`, `go_forward`, `reload`, `hard_reload`, `stop`, `go_home`, `copy_url`, `paste_and_navigate`, `open_copied_in_new_tab`, `focus_address_bar` (chrome-side)
-- **Window:** `window_new`, `window_close`, `window_minimize/maximize/close_controls`, `fullscreen_toggle`, `chrome_layout_changed(rect)`
-- **Downloads:** `download_cancel`, `download_retry`, `download_open`, `download_reveal`, `download_set_dir`, `download_clear_history`, `download_choose_path(id)`
-- **Bookmarks:** `bookmark_add(url,title)`, `bookmark_edit`, `bookmark_delete`, `bookmark_folder_*`, `bookmark_bar_toggle`, `bookmarks_query`, `bookmarks_import(file)`, `bookmarks_export(path)`
-- **History:** `history_query(q, limit)`, `history_delete(id)`, `history_clear(range)`, `history_frequent(limit)`
-- **Permissions:** `permission_respond(window, kind, origin, decision)`, `permissions_list`, `permission_reset(origin, kind?)`, `permission_reset_all`
-- **Settings:** `settings_get`, `settings_set(field, value)` (validated), `clear_browsing_data(kinds, range)`
-- **Find:** `find_begin(q)`, `find_next`, `find_prev`, `find_close`
-- **Misc:** `cert_proceed(origin)`, `cert_escape(origin)`, `newtab_data()`, `devtools_toggle`, `startup_info`
+- **Tabs:** `tab_create`, `tab_activate`, `tab_close`, `tab_close_others`, `tab_close_right`, `tab_duplicate`, `tab_reorder`, `tab_mute`, `tab_discard`, `reopen_closed`
+- **Navigation:** `navigate`, `go_back`, `go_forward`, `reload`, `hard_reload`, `stop`, `set_zoom`, `zoom_in`, `zoom_out`, `zoom_reset`
+- **Window/layout:** `chrome_layout_changed(rect)`, `chrome_overlay_changed(open)` — window controls use Tauri core capabilities (no custom window commands); single `main` window only
+- **Downloads:** `downloads_list`, `download_respond(id, allow)`, `download_cancel`, `download_retry`, `download_open`, `download_open_confirm`, `download_reveal`, `download_clear`
+- **Bookmarks:** `bookmarks_list`, `bookmark_toggle(url,title)`, `bookmark_edit`, `bookmark_delete`, `bookmark_status`
+- **History:** `history_query`, `history_frequent`, `history_delete`, `history_clear`
+- **Permissions:** `permission_respond`, `permissions_list`, `permission_reset`, `permission_reset_all`
+- **Settings:** `settings_get`, `settings_set(patch)`, `clear_browsing_data(kinds)`
+- **Find:** `find_start`, `find_next`, `find_prev`, `find_close`
+- **Session/chrome pages:** `startup_info`, `recently_closed_list`, `show_chrome_page(page)`
 
 ---
 
 ## 12. Security architecture (threat model: every remote site is hostile)
 
-1. **Capability allowlist (least privilege):** `capabilities/main.json` grants plugins/core only to `windows: ["browser-*"]`. **No capability file matches `tab-*`** → tab webviews cannot call core/plugin commands. Unit test asserts this by scanning capability JSON.
-2. **Remote-domain IPC denied by Tauri defaults**; no `dangerousRemoteDomainIpcAccess`. Custom commands additionally guard: `caller = webview.label()`, must match `browser-*` (defense in depth, unit-tested).
+1. **Capability allowlist (least privilege):** `capabilities/main.json` grants plugins/core only to `webviews: ["main"]` (Tauri 2 schema key is `webviews`, not `windows`). **No capability file matches `tab-*`** → tab webviews cannot call core/plugin commands. Unit test asserts this by scanning capability JSON.
+2. **Remote-domain IPC denied by Tauri defaults**; no `dangerousRemoteDomainIpcAccess`. Custom commands additionally guard: `caller = webview.label()`, must equal `"main"` (defense in depth, unit-tested via `security::caller::assert_chrome`).
 3. **Chrome CSP** (`tauri.conf.json`): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: favicon://; connect-src ipc: http://ipc.localhost; font-src 'self' data:`. No remote origins, no `unsafe-eval`.
 4. **Nav policy** in both address pipeline and `on_navigation` (tab webviews): block `file:`, `chrome:`, `tauri:`, internal, `about:` ≠ blank; `mailto:`/`tel:` → external handler.
 5. **No secrets/privileged paths in frontend JS**; data dir paths never cross into tab webviews.
 6. **Paths**: every filename sanitized (reject separators/`..`/absolute, Windows-illegal chars), duplicate → `name (1).ext`; download destinations always inside configured download dir; reveal/open via `tauri-plugin-opener` only.
-7. **TLS never bypassed silently**: cert flows in §9.7; logs record origin + error kind, never credentials.
+7. **TLS never bypassed silently**: cert handling is documented in §9 (failure surfaces); logs record origin + error kind, never credentials.
 8. **Isolation invariant tests** (e2e): a remote test page that calls `invoke("settings_get")` gets a rejection.
 9. `SECURITY.md` documents boundary, threats, mitigations, and the invariant list.
 
@@ -315,7 +315,7 @@ Anti-race rules: events carry `window_id + tab_id`; handlers in the frontend ign
 ## 16. Settings subsystem (validated)
 
 Sections (chrome Settings page, Astryx `settings-sidebar` template):
-Search engine (presets + custom template) · Home page · New-tab behavior (newtab|home|blank) · Startup (restore session | open home | blank) · Download location + ask-before · Appearance (theme: system/light/dark via `theme-neutral` + system sync via `matchMedia`; zoom default) · Privacy (history retention, clear browsing data incl. cookies/cache via `clear_all_browsing_data`, search suggestions off) · Tabs (tab sleeping, close-last-tab action, warn on unsaved forms) · Permissions (per-site table) · Language (chrome i18n; engine locale untouched — documented) · Proxy (per-webview `proxy_url`; macOS 14+ w/ `macos-proxy` feature) · Advanced (hardware acceleration note, devtools in dev builds) · Keyboard shortcuts reference.
+Search engine (presets + custom template) · Home page · New-tab behavior (new_tab_page|home|blank) · Startup (restore session | open home | blank) · Download location + ask-before · Appearance (theme: system/light/dark via codegen `rowsterTheme` + system sync via `matchMedia`; zoom default) · Privacy (history retention, clear browsing data incl. cookies/cache via `clear_all_browsing_data`, search suggestions off) · Tabs (tab sleeping, close-last-tab action, warn on unsaved forms) · Permissions (per-site table) · Language (chrome i18n; engine locale untouched — documented) · Proxy (per-webview `proxy_url`; macOS 14+ w/ `macos-proxy` feature) · Advanced (hardware acceleration note, devtools in dev builds) · Keyboard shortcuts reference.
 
 ---
 
@@ -344,7 +344,7 @@ Search engine (presets + custom template) · Home page · New-tab behavior (newt
 | Find in page | ✅ JS (`window.find`) | ✅ native | ✅ native |
 | Hard reload | ⚠️ = normal reload | ✅ | ✅ |
 | Load-failure → custom error page | ✅ | ⚠️ engine page | ✅ |
-| Cert interstitial (explicit, never silent) | ✅ override-able | ⚠️ engine default, no bypass | ✅ + http escape |
+| Cert interstitial (explicit, never silent) | ⚠️ planned (not yet implemented) | ⚠️ planned | ⚠️ planned |
 | Camera/mic/location/notifications perms | ✅ | ⚠️ denied by default (no handler API); notifications ❌ | ✅ |
 | Shortcuts while page focused | ✅ native event | ✅ menu | ✅ GTK event |
 | Page context menus | ✅ native | ⚠️ JS interception | ✅ native |
@@ -388,7 +388,7 @@ Search engine (presets + custom template) · Home page · New-tab behavior (newt
 ## 21. Risks & mitigations
 
 1. **Linux Wayland child-webview bounds (tauri#15656, open)** — re-assert bounds on every activation + after scale changes; runtime detection logs capability state; **fallback mode** (settings `linux_compat_mode`) = single-live-webview (destroy/recreate on switch, state restored from metadata) if the bug manifests. Documented in matrix.
-2. **`unstable` feature dependency** — all add_child/get_webview usage confined to `webview/` + `windows.rs`; migration note in docs; track stabilization in tauri 2.x minor releases.
+2. **`unstable` feature dependency** — all add_child/get_webview usage confined to `webview/`; migration note in docs; track stabilization in tauri 2.x minor releases.
 3. **macOS gaps (permissions/context-menu/download-progress/load-failure)** — denied-by-default / engine-default / JS-interception / indeterminate-progress fallbacks, all documented, none faked.
 4. **WebView2 sync deadlocks** — all commands async; webview calls never under lock; cookies read on tokio threads only.
 5. **DB corruption** — WAL + migrations + aside-and-recreate recovery + `.bak` session; no data-loss-critical code panics (structured errors everywhere, `?` propagation; no `unwrap` outside tests).
@@ -408,7 +408,7 @@ Search engine (presets + custom template) · Home page · New-tab behavior (newt
 1. **Phase 1 — Foundation:** scaffold (vite/react/ts + Astryx setup + theme), capabilities, frameless window + custom titlebar, one child webview, address bar + back/forward/reload/stop, address.rs + nav policy + errors + logging + CI skeleton. *Single-tab browser.*
 2. **Phase 2 — Tab system:** TabManager + mocks + tests, multi-webview, switch/close/reorder/duplicate/pin, title/url/loading events, focus/resize correctness, tab context menu, shortcut bridges, menu (macOS) + chrome menu.
 3. **Phase 3 — Persistence:** db + migrations + repos, settings (+validation + page), history, bookmarks (folders/bar/import/export/dedup), session atomic save/restore + crash recovery + recently closed.
-4. **Phase 4 — Browser features:** downloads (progress, tray, page, notifications, open/reveal), permissions broker + prompts + per-site UI, find, zoom, web context menus, mute/audio, tab sleep/discard, new-tab overlay (frequent/recent/closed/background), error pages + cert interstitial, bookmark bar, dnd polish.
+4. **Phase 4 — Browser features:** downloads (progress, tray, page, notifications, open/reveal), permissions broker + prompts + per-site UI, find, zoom, web context menus, mute/audio, tab sleep/discard, new-tab overlay (frequent/recent/closed/background), error pages (cert interstitial planned), bookmark bar, dnd polish.
 5. **Phase 5 — Production:** security review + isolation tests, accessibility pass (labels/focus/reduced motion), web-perf audit, favicon cache, cleanup tasks, CI matrix, `tauri build` on Windows, docs, readiness checklist.
 
 ## 24. Deliverables (as `docs/` + code)
