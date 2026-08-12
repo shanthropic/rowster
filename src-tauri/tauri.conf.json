@@ -32,7 +32,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "Browser",
+    "category": "Productivity",
     "shortDescription": "A privacy-respecting, multi-tab desktop browser",
     "longDescription": "Rowster is a privacy-respecting, multi-tab desktop web browser built with Rust and Tauri. Each tab is a real native webview isolated from the trusted chrome.",
     "icon": [
