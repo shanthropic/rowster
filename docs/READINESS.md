@@ -10,23 +10,24 @@ Status of the architectural plan's delivery phases, verified as of the last gate
 | B — Download progress | indeterminate ProgressBar on Downloads page (UI-level; engine gives no bytes) | ✅ Done (UI-only, documented) |
 | C — Tab reorder | Rust `reorder_to`/`reorder` + `tab_reorder` command (5 tests); TabStrip pointer-event drag-reorder wired through App/TitleBar with `tabReorder` IPC | ✅ Done |
 | D — Documentation | `docs/` deliverables (this set) | ✅ Done |
-| E — Release gates | `cargo audit`, Windows release bundle, final full gate run | ⏳ Pending |
+| E — Release gates | `cargo audit`, Windows release bundle, final full gate run | ✅ Done — audit clean (0 vulnerabilities, 17 transitive warnings documented in DEPS.md); MSI + NSIS installers built; category fix `d67c8ac`; all gates green |
 
 ## Verification snapshot (Phase A–C)
 
 - Rust: 137 tests pass (`cargo test --all-features --locked`); clippy `-D warnings` clean; `cargo fmt --check` clean.
 - Frontend: `tsc --noEmit` clean; `vite build` (production CSP) succeeds.
-- Bundle: `tauri build --debug --no-bundle` succeeds.
-- `npm audit`: 0 vulnerabilities.
+- Bundle: `tauri build --debug --no-bundle` and `tauri build --release` (MSI + NSIS) both succeed.
+- `npm audit`: 0 vulnerabilities; `cargo audit`: 0 vulnerabilities.
 - Security invariants pinned by tests: capability files never use `windows:` / grant tab webviews nothing; every command is caller-guarded.
 
-## Remaining for v1 (Phase E)
+## Release trail (Phases A–E commits)
 
-1. Install `cargo-audit` (`cargo install cargo-audit`) and run `cargo audit` in `src-tauri/`; fix or document advisories.
-2. Produce Windows release installer: `npx tauri build --release` (NSIS `.exe`).
-3. Re-run the full gate sequence in [`BUILD_RELEASE.md`](BUILD_RELEASE.md#gate-sequence-must-all-pass-before-release).
-4. Manual smoke test the release bundle (fresh profile: install, launch, create tabs, navigate, download, permission prompt, drag-reorder, restart → session restored).
-5. Tag + CI publish if distributing.
+`eec794d` fix hardening · `ae3388e` chrome rebuild · `e2d6a7c` lockfile refresh · `613c9ee` download progress UI · `faf55b5` drag-reorder tabs · `5b19a10` docs · `d67c8ac` bundle category fix
+
+## Before shipping
+
+1. Manual smoke test the release bundle (fresh profile: install, launch, create tabs, navigate, download, permission prompt, drag-reorder, restart → session restored).
+2. Tag + CI publish if distributing.
 
 ## Post-v1 backlog (not blockers)
 
