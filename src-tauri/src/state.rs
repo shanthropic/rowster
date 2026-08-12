@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::db::Db;
@@ -18,6 +19,9 @@ pub struct AppState {
     pub db: Arc<Db>,
     /// Canonical settings, kept in memory and persisted through `repos`.
     pub settings: Arc<std::sync::Mutex<Settings>>,
+    /// Serializes validated settings writes so concurrent patches cannot lose
+    /// one another while SQLite work runs on a blocking thread.
+    pub settings_write: Arc<tokio::sync::Mutex<()>>,
     pub session: Arc<Session>,
     /// In-memory "allow once" permission grants.
     pub permissions: Arc<PermissionBroker>,
@@ -25,6 +29,8 @@ pub struct AppState {
     pub find: Arc<FindBroker>,
     /// Favicon fetch/cache service (served via `favicon://`).
     pub favicons: Arc<FaviconCache>,
+    /// Executable download ids that received a native confirmation prompt.
+    pub pending_executable_open: Arc<std::sync::Mutex<HashSet<i64>>>,
 }
 
 impl AppState {

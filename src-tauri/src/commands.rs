@@ -42,7 +42,13 @@ pub async fn tab_create(app: AppHandle, webview: Webview) -> Result<TabInfo> {
     let info = manager.create(&app)?;
     manager.activate(&app, info.id)?;
     manager.emit_snapshot(&app)?;
-    Ok(info)
+    Ok(manager
+        .snapshot()
+        .windows
+        .first()
+        .and_then(|window| window.tabs.iter().find(|tab| tab.id == info.id))
+        .cloned()
+        .unwrap_or(info))
 }
 
 #[tauri::command]
@@ -54,7 +60,73 @@ pub async fn tab_activate(app: AppHandle, webview: Webview, id: u64) -> Result<(
 #[tauri::command]
 pub async fn tab_close(app: AppHandle, webview: Webview, id: u64) -> Result<()> {
     caller::assert_chrome(&webview)?;
-    manager(&app).close(&app, id)
+    let manager = manager(&app);
+    manager.close(&app, id)?;
+    let is_empty = manager
+        .snapshot()
+        .windows
+        .first()
+        .is_none_or(|window| window.tabs.is_empty());
+    if is_empty {
+        let action = lock(&app.state::<AppState>().settings)?.close_last_tab_action;
+        match action {
+            crate::settings::CloseLastTabAction::NewTab => {
+                let info = manager.create(&app)?;
+                manager.activate(&app, info.id)?;
+            }
+            crate::settings::CloseLastTabAction::CloseWindow => {
+                let window = app
+                    .get_webview_window(crate::model::MAIN_WEBVIEW_LABEL)
+                    .ok_or_else(|| {
+                        Error::WindowNotFound(crate::model::MAIN_WEBVIEW_LABEL.into())
+                    })?;
+                window.close()?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn tab_close_others(app: AppHandle, webview: Webview, id: u64) -> Result<()> {
+    caller::assert_chrome(&webview)?;
+    manager(&app).close_others(&app, id)
+}
+
+#[tauri::command]
+pub async fn tab_close_right(app: AppHandle, webview: Webview, id: u64) -> Result<()> {
+    caller::assert_chrome(&webview)?;
+    manager(&app).close_right(&app, id)
+}
+
+#[tauri::command]
+pub async fn tab_duplicate(app: AppHandle, webview: Webview, id: u64) -> Result<TabInfo> {
+    caller::assert_chrome(&webview)?;
+    let manager = manager(&app);
+    let source = manager
+        .snapshot()
+        .windows
+        .first()
+        .and_then(|window| window.tabs.iter().find(|tab| tab.id == id))
+        .cloned()
+        .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+    let duplicated = if source.is_new {
+        manager.create(&app)?
+    } else {
+        manager.create_with_url(&app, &source.url)?
+    };
+    manager.set_zoom(&app, duplicated.id, source.zoom)?;
+    if source.muted {
+        manager.set_muted(&app, duplicated.id, true)?;
+    }
+    manager.activate(&app, duplicated.id)?;
+    Ok(manager
+        .snapshot()
+        .windows
+        .first()
+        .and_then(|window| window.tabs.iter().find(|tab| tab.id == duplicated.id))
+        .cloned()
+        .unwrap_or(duplicated))
 }
 
 #[tauri::command]
@@ -118,22 +190,6 @@ pub async fn zoom_reset(app: AppHandle, webview: Webview, id: u64) -> Result<f64
 }
 
 #[tauri::command]
-pub async fn layout_diag(
-    webview: Webview,
-    chrome_top: f64,
-    chrome_bottom: f64,
-    scroll_y: f64,
-    inner_height: f64,
-    doc_scroll_height: f64,
-) -> Result<()> {
-    caller::assert_chrome(&webview)?;
-    log::info!(
-        "layout_diag: chrome_top={chrome_top:.1} chrome_bottom={chrome_bottom:.1} scroll_y={scroll_y:.1} inner_height={inner_height:.1} doc_scroll_height={doc_scroll_height:.1}"
-    );
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn chrome_layout_changed(
     app: AppHandle,
     webview: Webview,
@@ -153,6 +209,12 @@ pub async fn chrome_layout_changed(
     let sanitized = manager(&app).set_layout(layout);
     manager(&app).apply_layout(&app)?;
     Ok(sanitized)
+}
+
+#[tauri::command]
+pub async fn chrome_overlay_changed(webview: Webview, app: AppHandle, open: bool) -> Result<()> {
+    caller::assert_chrome(&webview)?;
+    manager(&app).set_chrome_overlay_open(open)
 }
 
 // ---------------------------------------------------------------------------
@@ -175,20 +237,17 @@ pub async fn settings_set(
 ) -> Result<Settings> {
     caller::assert_chrome(&webview)?;
     let state = app.state::<AppState>();
-
-    // Validate + apply under the lock, then persist on a blocking thread.
-    let updated = {
-        let mut settings = lock(&state.settings)?;
-        settings.apply(patch)?;
-        settings.clone()
-    };
+    let _write = state.settings_write.lock().await;
+    let mut updated = lock(&state.settings)?.clone();
+    updated.apply(patch)?;
     let db = state.db.clone();
     let persisted = updated.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if let Err(e) = db.with_conn(|conn| repos::settings::save(conn, &persisted)) {
-            log::error!("settings save failed: {e}");
-        }
-    });
+        db.with_conn(|conn| repos::settings::save(conn, &persisted))
+    })
+    .await
+    .map_err(|e| Error::Other(e.to_string()))??;
+    *lock(&state.settings)? = updated.clone();
 
     let _ = events::emit_to_chrome(&app, events::EV_SETTINGS_CHANGED, updated.clone());
     Ok(updated)
@@ -258,15 +317,16 @@ pub async fn clear_browsing_data(
                 events::emit_to_chrome(&app, events::EV_BOOKMARKS_CHANGED, ())?;
             }
             "downloads" => {
-                removed += with_db(&app, repos::downloads::clear_all).await?;
+                removed += with_db(&app, repos::downloads::clear_finished).await?;
             }
             "permissions" => {
                 removed += with_db(&app, repos::permissions::clear_all).await?;
+                state.permissions.clear();
             }
-            _ => {}
+            _ => return Err(Error::Other(format!("unknown browsing data kind: {kind}"))),
         }
-        let _ = state.tabs.emit_snapshot(&app);
     }
+    let _ = state.tabs.emit_snapshot(&app);
     Ok(removed)
 }
 
@@ -327,10 +387,7 @@ pub async fn bookmark_toggle(
     title: String,
 ) -> Result<Option<crate::repos::bookmarks::Bookmark>> {
     caller::assert_chrome(&webview)?;
-    let url = url.trim().to_string();
-    if url.is_empty() {
-        return Err(Error::Other("cannot bookmark an empty URL".into()));
-    }
+    let url = validate_web_url(&url)?;
     let result = with_db(&app, move |conn| {
         if let Some(id) = crate::repos::bookmarks::delete_by_url(conn, &url)? {
             return Ok((None, id));
@@ -362,10 +419,7 @@ pub async fn bookmark_edit(
     url: String,
 ) -> Result<bool> {
     caller::assert_chrome(&webview)?;
-    let url = url.trim().to_string();
-    if url.is_empty() {
-        return Err(Error::Other("bookmark URL cannot be empty".into()));
-    }
+    let url = validate_web_url(&url)?;
     let updated = with_db(&app, move |conn| {
         crate::repos::bookmarks::update(conn, id, &title, &url)
     })
@@ -449,6 +503,7 @@ pub async fn download_open(app: AppHandle, webview: Webview, id: i64) -> Result<
         return Err(Error::Other(format!("file not found: {path}")));
     }
     if crate::downloads::is_executable(&path_buf) {
+        lock(&app.state::<AppState>().pending_executable_open)?.insert(id);
         #[derive(Clone, serde::Serialize)]
         struct ConfirmPayload {
             id: i64,
@@ -473,6 +528,9 @@ pub async fn download_open(app: AppHandle, webview: Webview, id: i64) -> Result<
 #[tauri::command]
 pub async fn download_open_confirm(app: AppHandle, webview: Webview, id: i64) -> Result<()> {
     caller::assert_chrome(&webview)?;
+    if !lock(&app.state::<AppState>().pending_executable_open)?.remove(&id) {
+        return Err(Error::Other("executable open confirmation expired".into()));
+    }
     let row = with_db(&app, move |conn| crate::repos::downloads::by_id(conn, id))
         .await?
         .ok_or_else(|| Error::TabNotFound(format!("download {id}")))?;
@@ -509,6 +567,8 @@ pub async fn permission_respond(
     decision: crate::repos::permissions::PermissionDecision,
 ) -> Result<()> {
     caller::assert_chrome(&webview)?;
+    let origin = crate::permissions::canonical_origin(&origin)
+        .ok_or_else(|| Error::Other("permission origin must be an http(s) origin".into()))?;
     match decision {
         crate::repos::permissions::PermissionDecision::AlwaysAllow
         | crate::repos::permissions::PermissionDecision::Block => {
@@ -526,6 +586,13 @@ pub async fn permission_respond(
     Ok(())
 }
 
+fn validate_web_url(input: &str) -> Result<String> {
+    let url = url::Url::parse(input.trim())?;
+    crate::security::nav_policy::validate(&url)
+        .map_err(|error| Error::NavigationBlocked(error.to_string()))?;
+    Ok(url.to_string())
+}
+
 #[tauri::command]
 pub async fn permissions_list(app: AppHandle, webview: Webview) -> Result<Vec<SitePermission>> {
     caller::assert_chrome(&webview)?;
@@ -540,17 +607,23 @@ pub async fn permission_reset(
     kind: crate::repos::permissions::PermissionKind,
 ) -> Result<()> {
     caller::assert_chrome(&webview)?;
+    let origin = crate::permissions::canonical_origin(&origin)
+        .ok_or_else(|| Error::Other("permission origin must be an http(s) origin".into()))?;
+    let persisted_origin = origin.clone();
     with_db(&app, move |conn| {
-        crate::repos::permissions::clear(conn, &origin, kind)
+        crate::repos::permissions::clear(conn, &persisted_origin, kind)
     })
     .await?;
+    app.state::<AppState>().permissions.reset(&origin, kind);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn permission_reset_all(app: AppHandle, webview: Webview) -> Result<u64> {
     caller::assert_chrome(&webview)?;
-    with_db(&app, crate::repos::permissions::clear_all).await
+    let removed = with_db(&app, crate::repos::permissions::clear_all).await?;
+    app.state::<AppState>().permissions.clear();
+    Ok(removed)
 }
 
 #[tauri::command]
@@ -593,15 +666,4 @@ pub async fn tab_mute(app: AppHandle, webview: Webview, id: u64, muted: bool) ->
 pub async fn tab_discard(app: AppHandle, webview: Webview, id: u64) -> Result<()> {
     caller::assert_chrome(&webview)?;
     manager(&app).discard(&app, id)
-}
-
-#[tauri::command]
-pub async fn tab_set_visible(
-    app: AppHandle,
-    webview: Webview,
-    id: u64,
-    visible: bool,
-) -> Result<()> {
-    caller::assert_chrome(&webview)?;
-    manager(&app).set_tab_visible(id, visible)
 }

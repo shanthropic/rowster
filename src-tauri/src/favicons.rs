@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use url::Url;
 
-use crate::events::{self, EV_FAVICON_CHANGED};
 use crate::model::TabId;
 
 #[derive(Clone, serde::Serialize)]
@@ -30,7 +29,7 @@ const MAX_BYTES: usize = 512 * 1024;
 #[derive(Clone, Default)]
 pub struct FaviconCache {
     dir: PathBuf,
-    /// Origin host -> cache key (None = origin has no icon, don't retry).
+    /// Origin -> cache key (None = origin has no icon, don't retry).
     resolved: Arc<Mutex<HashMap<String, Option<String>>>>,
     /// Origin hosts with a fetch currently in flight.
     inflight: Arc<Mutex<Vec<String>>>,
@@ -53,57 +52,66 @@ impl FaviconCache {
         if url.scheme() != "http" && url.scheme() != "https" {
             return;
         }
-        let Some(host) = url.host_str() else {
-            return;
-        };
-        let host = host.to_ascii_lowercase();
-        if self.resolved.lock().unwrap().contains_key(&host) {
+        if url.host_str().is_none() {
             return;
         }
+        let origin = url.origin().ascii_serialization();
+        let Ok(resolved) = crate::error::lock(&self.resolved) else {
+            return;
+        };
+        if let Some(cached) = resolved.get(&origin).cloned() {
+            drop(resolved);
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                state.tabs.set_favicon(app, id, cached);
+            }
+            return;
+        }
+        drop(resolved);
         {
-            let mut inflight = self.inflight.lock().unwrap();
-            if inflight.contains(&host) {
+            let Ok(mut inflight) = crate::error::lock(&self.inflight) else {
+                return;
+            };
+            if inflight.contains(&origin) {
                 return;
             }
-            inflight.push(host.clone());
+            inflight.push(origin.clone());
         }
         let cache = self.clone();
         let app = app.clone();
-        std::thread::spawn(move || cache.fetch(app, id, host, url));
+        std::thread::spawn(move || cache.fetch(app, id, origin, url));
     }
 
     /// Runs on a worker thread: downloads, validates, and caches the icon.
-    fn fetch(&self, app: AppHandle, id: TabId, host: String, page_url: Url) {
+    fn fetch(&self, app: AppHandle, id: TabId, origin: String, page_url: Url) {
         let key = self.fetch_inner(&page_url);
-        {
-            let mut inflight = self.inflight.lock().unwrap();
-            inflight.retain(|h| *h != host);
+        if let Ok(mut inflight) = crate::error::lock(&self.inflight) {
+            inflight.retain(|item| *item != origin);
         }
-        let favicon_url = key.map(|k| format!("favicon://{k}.ico"));
-        self.resolved
-            .lock()
-            .unwrap()
-            .insert(host, favicon_url.clone());
-        let _ = events::emit_to_chrome(
-            &app,
-            EV_FAVICON_CHANGED,
-            FaviconChangedPayload { id, favicon_url },
-        );
+        let favicon_url = key.map(|key| protocol_url(&key));
+        if let Ok(mut resolved) = crate::error::lock(&self.resolved) {
+            resolved.insert(origin, favicon_url.clone());
+        }
+        if let Some(state) = app.try_state::<crate::state::AppState>() {
+            state.tabs.set_favicon(&app, id, favicon_url);
+        }
     }
 
     fn fetch_inner(&self, page_url: &Url) -> Option<String> {
-        let icon_url = format!(
-            "{}://{}{}",
-            page_url.scheme(),
-            page_url.host_str()?,
-            ICON_PATH
-        );
+        let mut icon_url = page_url.clone();
+        icon_url.set_path(ICON_PATH);
+        icon_url.set_query(None);
+        icon_url.set_fragment(None);
+        let _ = icon_url.set_username("");
+        let _ = icon_url.set_password(None);
         let client = reqwest::blocking::Client::builder()
             .timeout(TIMEOUT)
+            // A public site must not redirect Rowster's native fetcher into a
+            // private network that the page itself cannot reach.
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("Rowster/", env!("CARGO_PKG_VERSION")))
             .build()
             .ok()?;
-        let response = client.get(&icon_url).send().ok()?;
+        let response = client.get(icon_url).send().ok()?;
         if !response.status().is_success() {
             return None;
         }
@@ -119,7 +127,7 @@ impl FaviconCache {
         if body.is_empty() || body.len() > MAX_BYTES {
             return None;
         }
-        let key = sanitize_key(page_url.host_str()?);
+        let key = cache_key(page_url)?;
         if !is_safe_key(&key) {
             return None;
         }
@@ -135,6 +143,19 @@ impl FaviconCache {
         }
         std::fs::read(self.dir.join(format!("{key}.ico"))).ok()
     }
+}
+
+fn cache_key(url: &Url) -> Option<String> {
+    let port = url.port_or_known_default()?;
+    Some(sanitize_key(&format!(
+        "{}-{}-{port}",
+        url.scheme(),
+        url.host_str()?
+    )))
+}
+
+fn protocol_url(key: &str) -> String {
+    format!("favicon://localhost/{key}.ico")
 }
 
 /// Lowercases and strips characters that are unsafe in a cache filename.
@@ -165,6 +186,22 @@ mod tests {
         assert_eq!(sanitize_key("Example.COM"), "example.com");
         assert_eq!(sanitize_key("münchen.de"), "mnchen.de");
         assert_eq!(sanitize_key("a/b\\c:d*e"), "abcde");
+    }
+
+    #[test]
+    fn cache_key_separates_schemes_and_ports() {
+        let https = Url::parse("https://example.com/").unwrap();
+        let http = Url::parse("http://example.com:8080/").unwrap();
+        assert_eq!(cache_key(&https).as_deref(), Some("https-example.com-443"));
+        assert_eq!(cache_key(&http).as_deref(), Some("http-example.com-8080"));
+    }
+
+    #[test]
+    fn protocol_url_places_the_cache_key_in_the_path() {
+        assert_eq!(
+            protocol_url("https-example.com-443"),
+            "favicon://localhost/https-example.com-443.ico"
+        );
     }
 
     #[test]

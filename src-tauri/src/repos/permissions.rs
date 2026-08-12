@@ -105,15 +105,21 @@ pub fn list(conn: &Connection) -> Result<Vec<SitePermission>> {
     let mut stmt =
         conn.prepare("SELECT origin, kind, decision FROM site_permissions ORDER BY origin, kind")?;
     let rows = stmt.query_map([], |row| {
+        let origin: String = row.get(0)?;
         let kind: String = row.get(1)?;
         let decision: String = row.get(2)?;
-        Ok(SitePermission {
-            origin: row.get(0)?,
-            kind: PermissionKind::from_str(&kind).unwrap_or(PermissionKind::Camera),
-            decision: PermissionDecision::from_str(&decision).unwrap_or(PermissionDecision::Block),
-        })
+        Ok(PermissionKind::from_str(&kind)
+            .zip(PermissionDecision::from_str(&decision))
+            .map(|(kind, decision)| SitePermission {
+                origin,
+                kind,
+                decision,
+            }))
     })?;
+    // Rows whose stored kind/decision strings are unknown map to `None` and
+    // are skipped; real SQLite errors must propagate, not vanish.
     rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map(|rows| rows.into_iter().flatten().collect())
         .map_err(Into::into)
 }
 
@@ -292,9 +298,15 @@ mod tests {
             [],
         )
         .unwrap();
+        set(
+            &conn,
+            "https://z.test",
+            PermissionKind::Camera,
+            PermissionDecision::Block,
+        )
+        .unwrap();
         let rows = list(&conn).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].kind, PermissionKind::Camera);
-        assert_eq!(rows[0].decision, PermissionDecision::AllowOnce);
+        assert_eq!(rows[0].origin, "https://z.test");
     }
 }

@@ -60,8 +60,13 @@ impl PermissionBroker {
         map.contains_key(&(origin.to_string(), kind))
     }
 
-    #[cfg(test)]
-    fn clear(&self) {
+    pub fn reset(&self, origin: &str, kind: PermissionKind) {
+        if let Ok(mut map) = crate::error::lock(&self.once) {
+            map.remove(&(origin.to_string(), kind));
+        }
+    }
+
+    pub fn clear(&self) {
         if let Ok(mut map) = crate::error::lock(&self.once) {
             map.clear();
         }
@@ -75,7 +80,10 @@ pub fn decide(app: &AppHandle, tab_id: TabId, origin: &str, kind: PermissionKind
     let Some(state) = app.try_state::<AppState>() else {
         return Decision::Deny;
     };
-    let resolve = resolve(&state.db, &state.permissions, origin, kind);
+    let Some(origin) = canonical_origin(origin) else {
+        return Decision::Deny;
+    };
+    let resolve = resolve(&state.db, &state.permissions, &origin, kind);
     match resolve {
         Resolve::Allow => Decision::Allow,
         Resolve::Deny => Decision::Deny,
@@ -85,13 +93,22 @@ pub fn decide(app: &AppHandle, tab_id: TabId, origin: &str, kind: PermissionKind
                 events::EV_PERMISSION_REQUESTED,
                 PermissionRequestedPayload {
                     tab_id,
-                    origin: origin.to_string(),
+                    origin,
                     kind,
                 },
             );
             Decision::Deny
         }
     }
+}
+
+/// Reduces a page URL to the permission boundary used for persistence.
+pub fn canonical_origin(input: &str) -> Option<String> {
+    let url = url::Url::parse(input).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return None;
+    }
+    Some(url.origin().ascii_serialization())
 }
 
 /// Shared resolution core (no `AppHandle` needed; prompt emission is the
@@ -242,7 +259,14 @@ fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Re
             };
             // WebKitGTK does not expose the requesting origin; the tab's
             // current URL is the best approximation at request time.
-            let origin = tabs.tab_url(tab_id).unwrap_or_default();
+            let origin = tabs
+                .tab_url(tab_id)
+                .and_then(|url| canonical_origin(&url))
+                .unwrap_or_default();
+            if origin.is_empty() {
+                request.deny();
+                return true;
+            }
             match resolve(&db, &broker, &origin, kind) {
                 Resolve::Allow => request.allow(),
                 _ => {
@@ -323,5 +347,19 @@ mod tests {
             resolve(&db, &broker, "https://a.test", PermissionKind::Camera),
             Resolve::Prompt
         );
+    }
+
+    #[test]
+    fn canonical_origin_drops_paths_queries_and_credentials() {
+        assert_eq!(
+            canonical_origin("https://user:secret@example.com:8443/path?q=1"),
+            Some("https://example.com:8443".to_string())
+        );
+    }
+
+    #[test]
+    fn canonical_origin_rejects_non_web_origins() {
+        assert_eq!(canonical_origin("file:///etc/passwd"), None);
+        assert_eq!(canonical_origin("not a url"), None);
     }
 }

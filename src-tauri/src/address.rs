@@ -65,11 +65,54 @@ impl Address {
         )))
     }
 
+    /// Resolves address-bar input to either a URL or a search-engine URL.
+    /// Explicit schemes are returned for the navigation policy to accept or
+    /// reject; only ordinary non-host input is converted into a search.
+    pub fn resolve(input: &str, search_engine: &str) -> Result<Url> {
+        match Self::parse(input) {
+            Ok(url) => Ok(url),
+            Err(error) if Self::has_explicit_scheme(input.trim()) => {
+                Url::parse(input.trim()).map_err(|_| error)
+            }
+            Err(_) => Self::search_url(input, search_engine),
+        }
+    }
+
     fn has_scheme(url: &Url) -> bool {
         // `localhost:8080` parses as scheme `localhost`, so only treat
         // known schemes as real schemes here; everything else falls through
         // to host promotion.
         matches!(url.scheme(), "http" | "https" | "about")
+    }
+
+    fn has_explicit_scheme(input: &str) -> bool {
+        let Some((scheme, rest)) = input.split_once(':') else {
+            return false;
+        };
+        if scheme.is_empty()
+            || !scheme.chars().enumerate().all(|(index, c)| {
+                c.is_ascii_alphabetic() || (index > 0 && matches!(c, '+' | '-' | '.' | '0'..='9'))
+            })
+        {
+            return false;
+        }
+
+        // Host-and-port input such as `localhost:3000` is not a URL scheme.
+        let looks_like_host_port = rest.parse::<u16>().is_ok()
+            && (scheme.eq_ignore_ascii_case("localhost")
+                || scheme.contains('.')
+                || scheme.parse::<std::net::IpAddr>().is_ok());
+        !looks_like_host_port
+    }
+
+    fn search_url(input: &str, search_engine: &str) -> Result<Url> {
+        let query = input.trim();
+        if query.is_empty() {
+            return Err(Error::InvalidAddress("empty address".to_string()));
+        }
+        let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+        let resolved = search_engine.replace("{q}", &encoded);
+        Url::parse(&resolved).map_err(|e| Error::InvalidAddress(e.to_string()))
     }
 
     fn is_ip_literal(host: &str) -> bool {
@@ -163,6 +206,36 @@ mod tests {
         assert_eq!(
             Address::parse("  example.com  ").unwrap().as_str(),
             "https://example.com/"
+        );
+    }
+
+    #[test]
+    fn resolves_plain_words_and_spaces_as_searches() {
+        let engine = "https://search.example/?q={q}";
+        assert_eq!(
+            Address::resolve("rust browser", engine).unwrap().as_str(),
+            "https://search.example/?q=rust+browser"
+        );
+        assert_eq!(
+            Address::resolve("rowster", engine).unwrap().as_str(),
+            "https://search.example/?q=rowster"
+        );
+    }
+
+    #[test]
+    fn keeps_explicit_dangerous_schemes_for_policy_rejection() {
+        let resolved =
+            Address::resolve("javascript:alert(1)", "https://search.example/?q={q}").unwrap();
+        assert_eq!(resolved.scheme(), "javascript");
+    }
+
+    #[test]
+    fn resolves_host_and_port_without_treating_host_as_scheme() {
+        assert_eq!(
+            Address::resolve("localhost:3000", "https://search.example/?q={q}",)
+                .unwrap()
+                .as_str(),
+            "http://localhost:3000/"
         );
     }
 }

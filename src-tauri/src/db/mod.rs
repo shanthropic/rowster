@@ -37,7 +37,11 @@ impl Db {
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 let aside = dir.join(format!("rowster-corrupt-{stamp}.db"));
-                std::fs::rename(&path, &aside)?;
+                if path.exists() {
+                    std::fs::rename(&path, &aside)?;
+                } else {
+                    return Err(first);
+                }
                 Self::open_at(&path)
             }
         }

@@ -68,7 +68,37 @@ pub fn insert(
             created_at
         ],
     )?;
-    Ok(by_id(conn, conn.last_insert_rowid())?.expect("just inserted"))
+    by_id(conn, conn.last_insert_rowid())?
+        .ok_or_else(|| crate::error::Error::Other("inserted download was not found".into()))
+}
+
+/// Converts an ask-before row into the active engine download without
+/// creating a duplicate history entry.
+pub fn start_pending(conn: &Connection, id: i64, path: Option<&str>) -> Result<()> {
+    let changed = conn.execute(
+        "UPDATE downloads SET path = ?1, status = 'active', error = NULL, finished_at = NULL
+         WHERE id = ?2 AND status IN ('requested', 'cancelled', 'failed')",
+        params![path, id],
+    )?;
+    if changed == 0 {
+        return Err(crate::error::Error::Other(
+            "download prompt is no longer pending".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub fn mark_requested(conn: &Connection, id: i64) -> Result<()> {
+    let changed = conn.execute(
+        "UPDATE downloads SET status = 'requested' WHERE id = ?1 AND status = 'active'",
+        [id],
+    )?;
+    if changed == 0 {
+        return Err(crate::error::Error::Other(
+            "download could not enter requested state".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn by_id(conn: &Connection, id: i64) -> Result<Option<Download>> {
@@ -100,8 +130,20 @@ pub fn latest_by_url(conn: &Connection, url: &str) -> Result<Option<Download>> {
     conn.query_row(
         "SELECT id, tab_id, url, filename, path, mime, total_bytes, received_bytes,
                 status, error, created_at, finished_at FROM downloads
-         WHERE url = ?1 ORDER BY id DESC LIMIT 1",
+         WHERE url = ?1 AND status = 'active' ORDER BY id DESC LIMIT 1",
         [url],
+        map_download,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+pub fn active_by_path(conn: &Connection, path: &str) -> Result<Option<Download>> {
+    conn.query_row(
+        "SELECT id, tab_id, url, filename, path, mime, total_bytes, received_bytes,
+                status, error, created_at, finished_at FROM downloads
+         WHERE path = ?1 AND status = 'active' ORDER BY id DESC LIMIT 1",
+        [path],
         map_download,
     )
     .optional()
@@ -149,12 +191,6 @@ pub fn clear_finished(conn: &Connection) -> Result<u64> {
         "DELETE FROM downloads WHERE status IN ('completed', 'cancelled', 'failed')",
         [],
     )?;
-    Ok(changed as u64)
-}
-
-/// Removes every download row (used by "clear browsing data").
-pub fn clear_all(conn: &Connection) -> Result<u64> {
-    let changed = conn.execute("DELETE FROM downloads", [])?;
     Ok(changed as u64)
 }
 
@@ -241,6 +277,29 @@ mod tests {
     }
 
     #[test]
+    fn active_by_path_disambiguates_identical_urls() {
+        let conn = fresh();
+        let first = seed(&conn);
+        let second = insert(
+            &conn,
+            Some(1),
+            "https://example.com/file.zip",
+            "file (1).zip",
+            Some("C:\\dl\\file (1).zip"),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            active_by_path(&conn, "C:\\dl\\file.zip")
+                .unwrap()
+                .map(|row| row.id),
+            Some(first.id)
+        );
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
     fn finish_stamps_status_and_time() {
         let conn = fresh();
         let download = seed(&conn);
@@ -259,6 +318,26 @@ mod tests {
         let row = by_id(&conn, download.id).unwrap().unwrap();
         assert_eq!(row.received_bytes, 400);
         assert_eq!(row.total_bytes, Some(1000));
+    }
+
+    #[test]
+    fn start_pending_reuses_the_prompt_row() {
+        let conn = fresh();
+        let pending = insert(
+            &conn,
+            Some(1),
+            "https://example.com/file.zip",
+            "file.zip",
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        mark_requested(&conn, pending.id).unwrap();
+        start_pending(&conn, pending.id, Some("C:\\dl\\file.zip")).unwrap();
+        let rows = list(&conn, 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path.as_deref(), Some("C:\\dl\\file.zip"));
     }
 
     #[test]

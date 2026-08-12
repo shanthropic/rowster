@@ -43,6 +43,24 @@ impl NavigationLog {
         self.index.saturating_add(1) < self.entries.len()
     }
 
+    /// Moves the cursor after the engine accepted a back navigation.
+    pub fn move_back(&mut self) -> bool {
+        if !self.can_go_back() {
+            return false;
+        }
+        self.index -= 1;
+        true
+    }
+
+    /// Moves the cursor after the engine accepted a forward navigation.
+    pub fn move_forward(&mut self) -> bool {
+        if !self.can_go_forward() {
+            return false;
+        }
+        self.index += 1;
+        true
+    }
+
     /// Records a new navigation, discarding any forward entries.
     /// Duplicate consecutive URLs are collapsed in place.
     pub fn push(&mut self, url: String, title: Option<String>) {
@@ -169,5 +187,15 @@ mod tests {
         let decoded: NavigationLog = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.current().unwrap().url, "c");
         assert!(decoded.can_go_back());
+    }
+
+    #[test]
+    fn explicit_moves_disambiguate_repeated_urls() {
+        let mut log = log_with(&["a", "b", "a"]);
+        assert!(log.move_back());
+        assert_eq!(log.current().map(|entry| entry.url.as_str()), Some("b"));
+        assert!(log.move_forward());
+        assert_eq!(log.current().map(|entry| entry.url.as_str()), Some("a"));
+        assert!(!log.can_go_forward());
     }
 }

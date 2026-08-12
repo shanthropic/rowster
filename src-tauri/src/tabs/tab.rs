@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+#[cfg(test)]
 use url::Url;
 
 use crate::error::Result;
@@ -32,7 +33,7 @@ pub struct Tab {
     /// this exact URL is accepted without the ask-before-download dialog
     /// (set when the user allowed a download prompt, then re-navigation
     /// re-triggers the engine request).
-    pub pending_download_url: Option<String>,
+    pub pending_download: Option<(i64, String)>,
 }
 
 impl Tab {
@@ -53,7 +54,7 @@ impl Tab {
             chrome_page: None,
             navlog: NavigationLog::new(),
             last_used_at: crate::repos::bookmarks::now_epoch(),
-            pending_download_url: None,
+            pending_download: None,
         }
     }
 
@@ -84,10 +85,12 @@ impl Tab {
         self.navlog.is_empty()
     }
 
+    #[cfg(test)]
     pub fn navigate(&mut self, url: Url) -> Result<()> {
         let url_str = url.to_string();
-        self.navlog.push(url_str.clone(), None);
-        self.handle.navigate(&url_str)
+        self.handle.navigate(&url_str)?;
+        self.navlog.push(url_str, None);
+        Ok(())
     }
 
     pub fn go_back(&self) -> Result<()> {
@@ -108,18 +111,6 @@ impl Tab {
 
     pub fn stop(&self) -> Result<()> {
         self.handle.stop()
-    }
-
-    /// Clamps to the engine-supported range [0.25, 5.0] and persists.
-    pub fn set_zoom(&mut self, factor: f64) -> Result<f64> {
-        let clamped = if factor.is_finite() {
-            factor.clamp(0.25, 5.0)
-        } else {
-            1.0
-        };
-        self.zoom = clamped;
-        self.handle.set_zoom(clamped)?;
-        Ok(clamped)
     }
 
     /// Reconciles the navigation log after a finished page load.
@@ -163,9 +154,11 @@ impl Tab {
 
     /// Applies engine-level muting and records the state. On WebView2 the
     /// mute is a page-JS fallback; on WebKit it is engine-level.
+    #[cfg(test)]
     pub fn set_muted(&mut self, muted: bool) -> Result<()> {
+        self.handle.set_muted(muted)?;
         self.muted = muted;
-        self.handle.set_muted(muted)
+        Ok(())
     }
 
     /// Restores a muted tab after a page load (JS fallbacks reset on
@@ -180,36 +173,42 @@ impl Tab {
     /// Marks the tab as sleeping: the webview is hidden but the page keeps
     /// running, so no reload is needed on wake.
     pub fn sleep(&mut self) -> Result<()> {
+        self.handle.set_visible(false)?;
         self.sleeping = true;
-        self.handle.set_visible(false)
+        Ok(())
     }
 
     /// Wakes a sleeping tab (visibility only).
+    #[cfg(test)]
     pub fn wake(&mut self) -> Result<()> {
+        self.handle.set_visible(true)?;
         self.sleeping = false;
-        self.handle.set_visible(true)
+        Ok(())
     }
 
     /// Unloads the page into `about:blank`, remembering the URL so the tab
     /// can be restored on activation.
+    #[cfg(test)]
     pub fn discard(&mut self) -> Result<()> {
+        self.handle.navigate("about:blank")?;
         self.discarded = true;
-        self.handle.navigate("about:blank")
+        Ok(())
     }
 
     /// Arms the one-shot download bypass for `url`.
-    pub fn allow_next_download(&mut self, url: &str) {
-        self.pending_download_url = Some(url.to_string());
+    pub fn allow_next_download(&mut self, id: i64, url: &str) {
+        self.pending_download = Some((id, url.to_string()));
     }
 
     /// Consumes the bypass when it matches `url`; used by the download hook.
-    pub fn take_pending_download(&mut self, url: &str) -> bool {
-        if self.pending_download_url.as_deref() == Some(url) {
-            self.pending_download_url = None;
-            true
-        } else {
-            false
-        }
+    pub fn take_pending_download(&mut self, url: &str) -> Option<i64> {
+        let matches = self
+            .pending_download
+            .as_ref()
+            .is_some_and(|(_, pending_url)| pending_url == url);
+        matches
+            .then(|| self.pending_download.take().map(|(id, _)| id))
+            .flatten()
     }
 }
 

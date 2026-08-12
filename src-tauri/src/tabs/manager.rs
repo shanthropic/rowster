@@ -37,6 +37,9 @@ struct Inner {
     active: Mutex<Option<TabId>>,
     next_id: AtomicU64,
     layout: Mutex<Layout>,
+    /// Native child webviews sit above chrome; hide the active child while a
+    /// chrome dialog or popover extends into the content region.
+    chrome_overlay_open: Mutex<bool>,
     /// Closed tabs kept for "Reopen closed tab" (most recent first).
     recently_closed: Mutex<VecDeque<ClosedTab>>,
     /// Trigger for the debounced session-save task (`None` before setup).
@@ -58,6 +61,7 @@ impl TabManager {
                 active: Mutex::new(None),
                 next_id: AtomicU64::new(0),
                 layout: Mutex::new(Layout::default()),
+                chrome_overlay_open: Mutex::new(false),
                 recently_closed: Mutex::new(VecDeque::new()),
                 session_signal: Mutex::new(None),
             }),
@@ -146,12 +150,23 @@ impl TabManager {
             "apply_layout: window_logical=({w:.1}x{h:.1}) scale={scale:.4} layout.top={top:.1} tab_rect=({x:.1},{y:.1} {tab_w:.1}x{tab_h:.1})"
         );
 
-        let tabs = lock(&self.inner.tabs)?;
         let active = self.active_id();
-        for tab in tabs.values() {
-            tab.handle.set_bounds(x, y, tab_w, tab_h)?;
-            tab.handle
-                .set_visible(Some(tab.id) == active && !tab.is_new_tab())?;
+        let overlay_open = *lock(&self.inner.chrome_overlay_open)?;
+        let views = lock(&self.inner.tabs)?
+            .values()
+            .map(|tab| {
+                (
+                    tab.handle.clone(),
+                    Some(tab.id) == active
+                        && !tab.is_new_tab()
+                        && tab.chrome_page.is_none()
+                        && !overlay_open,
+                )
+            })
+            .collect::<Vec<_>>();
+        for (handle, visible) in views {
+            handle.set_bounds(x, y, tab_w, tab_h)?;
+            handle.set_visible(visible)?;
         }
         Ok(())
     }
@@ -242,6 +257,7 @@ impl TabManager {
     /// the recently-closed queue. Tab ids are reassigned in display order.
     pub fn restore_session(&self, app: &AppHandle, file: &SessionFile) -> Result<()> {
         let mut active_id: Option<TabId> = None;
+        let mut first_id: Option<TabId> = None;
         if let Some(window) = file.windows.first() {
             for (i, saved) in window.tabs.iter().enumerate() {
                 let info = self.create(app)?;
@@ -249,15 +265,28 @@ impl TabManager {
                     log::warn!("restored tab {} failed to navigate: {e}", info.id);
                     continue;
                 }
+                first_id.get_or_insert(info.id);
+                {
+                    let mut tabs = lock(&self.inner.tabs)?;
+                    let tab = tabs
+                        .get_mut(&info.id)
+                        .ok_or_else(|| Error::TabNotFound(info.id.to_string()))?;
+                    tab.title = saved.title.clone();
+                    tab.pinned = saved.pinned;
+                    tab.navlog = saved.navlog.clone();
+                }
                 if (saved.zoom - 1.0).abs() > f64::EPSILON {
                     let _ = self.set_zoom(app, info.id, saved.zoom);
+                }
+                if saved.muted {
+                    let _ = self.set_muted(app, info.id, true);
                 }
                 if i == window.active_tab {
                     active_id = Some(info.id);
                 }
             }
         }
-        if let Some(id) = active_id {
+        if let Some(id) = active_id.or(first_id) {
             self.activate(app, id)?;
         }
         if let Ok(mut queue) = lock(&self.inner.recently_closed) {
@@ -283,7 +312,11 @@ impl TabManager {
         let Some(closed) = closed else {
             return Ok(None);
         };
-        let info = self.create_with_url(app, &closed.url)?;
+        let info = if closed.url == ABOUT_BLANK {
+            self.create(app)?
+        } else {
+            self.create_with_url(app, &closed.url)?
+        };
         self.activate(app, info.id)?;
         Ok(Some(info))
     }
@@ -293,35 +326,74 @@ impl TabManager {
         let id = self
             .active_id()
             .ok_or_else(|| Error::Other("no active tab".into()))?;
-        {
+        let overlay_open = *lock(&self.inner.chrome_overlay_open)?;
+        let show_webview = {
             let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
                 .get_mut(&id)
                 .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
             tab.chrome_page = page;
-        }
+            page.is_none() && !tab.is_new_tab() && !overlay_open
+        };
+        self.with_handle(id, |handle| handle.set_visible(show_webview))?;
         self.emit_snapshot(app)
     }
 
+    pub fn set_chrome_overlay_open(&self, open: bool) -> Result<()> {
+        *lock(&self.inner.chrome_overlay_open)? = open;
+        let Some(id) = self.active_id() else {
+            return Ok(());
+        };
+        let (handle, visible) = {
+            let tabs = lock(&self.inner.tabs)?;
+            let tab = tabs
+                .get(&id)
+                .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+            (
+                tab.handle.clone(),
+                !open && !tab.is_new_tab() && tab.chrome_page.is_none(),
+            )
+        };
+        handle.set_visible(visible)
+    }
+
     /// Arms the one-shot download-prompt bypass on a tab.
-    pub fn allow_next_download(&self, id: TabId, url: &str) -> Result<()> {
+    pub fn allow_next_download(&self, id: TabId, download_id: i64, url: &str) -> Result<()> {
         let mut tabs = lock(&self.inner.tabs)?;
         let tab = tabs
             .get_mut(&id)
             .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-        tab.allow_next_download(url);
+        tab.allow_next_download(download_id, url);
         Ok(())
     }
 
     /// Consumes the one-shot download-prompt bypass for `url`.
-    pub fn take_pending_download(&self, id: TabId, url: &str) -> bool {
+    pub fn take_pending_download(&self, id: TabId, url: &str) -> Option<i64> {
         let Ok(mut tabs) = lock(&self.inner.tabs) else {
-            return false;
+            return None;
         };
-        let Some(tab) = tabs.get_mut(&id) else {
-            return false;
-        };
+        let tab = tabs.get_mut(&id)?;
         tab.take_pending_download(url)
+    }
+
+    /// Updates canonical favicon state before the event reaches chrome.
+    pub fn set_favicon(&self, app: &AppHandle, id: TabId, favicon_url: Option<String>) {
+        let result: Result<()> = (|| {
+            let mut tabs = lock(&self.inner.tabs)?;
+            let tab = tabs
+                .get_mut(&id)
+                .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+            tab.favicon_url = favicon_url.clone();
+            Ok(())
+        })();
+        if result.is_err() {
+            return;
+        }
+        let _ = events::emit_to_chrome(
+            app,
+            events::EV_FAVICON_CHANGED,
+            crate::favicons::FaviconChangedPayload { id, favicon_url },
+        );
     }
 
     /// Current URL of a tab (best-effort; empty for fresh tabs).
@@ -341,21 +413,22 @@ impl TabManager {
         id: TabId,
         f: impl FnOnce(&dyn WebviewHandle) -> Result<T>,
     ) -> Result<T> {
-        let tabs = lock(&self.inner.tabs)?;
-        let tab = tabs
+        let handle = lock(&self.inner.tabs)?
             .get(&id)
+            .map(|tab| tab.handle.clone())
             .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-        f(tab.handle.as_ref())
+        f(handle.as_ref())
     }
 
     /// Toggles engine-level muting and emits the updated snapshot.
     pub fn set_muted(&self, app: &AppHandle, id: TabId, muted: bool) -> Result<()> {
+        self.tab(id)?.handle.set_muted(muted)?;
         {
             let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
                 .get_mut(&id)
                 .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-            tab.set_muted(muted)?;
+            tab.muted = muted;
         }
         self.emit_snapshot(app)
     }
@@ -373,25 +446,14 @@ impl TabManager {
         if !can_discard {
             return Ok(());
         }
-        {
-            let mut tabs = lock(&self.inner.tabs)?;
-            let tab = tabs
-                .get_mut(&id)
-                .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-            tab.discard()?;
-        }
-        self.emit_snapshot(app)
-    }
-
-    /// Explicitly sets the visibility of a single tab webview. Used by chrome
-    /// overlays (menus, find bar) to temporarily hide the active tab so the
-    /// native child webview doesn't paint on top of chrome UI.
-    pub fn set_tab_visible(&self, id: TabId, visible: bool) -> Result<()> {
-        let tabs = lock(&self.inner.tabs)?;
+        self.tab(id)?.handle.navigate(ABOUT_BLANK)?;
+        let mut tabs = lock(&self.inner.tabs)?;
         let tab = tabs
-            .get(&id)
+            .get_mut(&id)
             .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-        tab.handle.set_visible(visible)
+        tab.discarded = true;
+        drop(tabs);
+        self.emit_snapshot(app)
     }
 
     /// Hides inactive tabs that have not been used for
@@ -540,8 +602,13 @@ impl TabManager {
                         }
                         allow
                     }
-                    tauri::webview::DownloadEvent::Finished { url, success, .. } => {
-                        crate::downloads::on_download_finished(&app_handle, url.as_str(), success);
+                    tauri::webview::DownloadEvent::Finished { url, path, success } => {
+                        crate::downloads::on_download_finished(
+                            &app_handle,
+                            url.as_str(),
+                            path.as_deref(),
+                            success,
+                        );
                         true
                     }
                     // Future variants (e.g. progress) never cancel a download.
@@ -562,7 +629,19 @@ impl TabManager {
         // Hidden until activated, so tab switches never flash.
         let _ = handle.set_visible(false);
 
-        let tab = Tab::new(id, handle);
+        let default_zoom = app
+            .try_state::<crate::state::AppState>()
+            .and_then(|state| {
+                lock(&state.settings)
+                    .ok()
+                    .map(|settings| settings.zoom_default)
+            })
+            .unwrap_or(1.0);
+        if (default_zoom - 1.0).abs() > f64::EPSILON {
+            handle.set_zoom(default_zoom)?;
+        }
+        let mut tab = Tab::new(id, handle);
+        tab.zoom = default_zoom;
         let info = tab.to_info(false);
         {
             let mut tabs = lock(&self.inner.tabs)?;
@@ -580,56 +659,58 @@ impl TabManager {
     pub fn create_with_url(&self, app: &AppHandle, address: &str) -> Result<TabInfo> {
         let info = self.create(app)?;
         let id = info.id;
-        match self.navigate(app, id, address) {
-            Ok(()) => {}
-            Err(e) => {
-                log::warn!("new tab {id}: navigation failed: {e}");
-            }
+        if let Err(error) = self.navigate(app, id, address) {
+            let _ = self.close(app, id);
+            return Err(error);
         }
-        Ok(info)
+        self.tab(id).map(|tab| tab.to_info(false))
     }
 
     pub fn activate(&self, app: &AppHandle, id: TabId) -> Result<()> {
         let (w, h) = Self::window_logical_size(app)?;
         let (x, y, tab_w, tab_h) = self.layout().tab_rect(w, h);
 
-        {
+        let overlay_open = *lock(&self.inner.chrome_overlay_open)?;
+        let (target, others, visible, restore) = {
             let tabs = lock(&self.inner.tabs)?;
-            if !tabs.contains_key(&id) {
-                return Err(Error::TabNotFound(id.to_string()));
-            }
-            for (tid, tab) in tabs.iter() {
-                if *tid != id {
-                    tab.handle.set_visible(false)?;
-                }
-            }
-        }
-
-        {
-            let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
-                .get_mut(&id)
+                .get(&id)
                 .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-            tab.touch();
-            if tab.sleeping {
-                tab.wake()?;
-            } else if !tab.is_new_tab() {
-                tab.handle.set_visible(true)?;
-            }
-            // A discarded tab restores its last page on activation.
-            if tab.discarded {
-                let restore = tab
-                    .url
-                    .clone()
-                    .filter(|u| u.starts_with("http://") || u.starts_with("https://"));
-                if let Some(url) = restore {
-                    tab.discarded = false;
-                    tab.handle.navigate(&url)?;
-                }
-            }
-            tab.handle.set_bounds(x, y, tab_w, tab_h)?;
-            tab.handle.set_focus()?;
+            let restore = tab
+                .discarded
+                .then(|| tab.url.clone())
+                .flatten()
+                .filter(|url| url.starts_with("http://") || url.starts_with("https://"));
+            (
+                tab.handle.clone(),
+                tabs.iter()
+                    .filter(|(tab_id, _)| **tab_id != id)
+                    .map(|(_, tab)| tab.handle.clone())
+                    .collect::<Vec<_>>(),
+                !tab.is_new_tab() && tab.chrome_page.is_none() && !overlay_open,
+                restore,
+            )
+        };
+        for handle in others {
+            handle.set_visible(false)?;
         }
+        target.set_visible(visible)?;
+        if let Some(url) = restore.as_deref() {
+            target.navigate(url)?;
+        }
+        target.set_bounds(x, y, tab_w, tab_h)?;
+        target.set_focus()?;
+
+        let mut tabs = lock(&self.inner.tabs)?;
+        let tab = tabs
+            .get_mut(&id)
+            .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+        tab.touch();
+        tab.sleeping = false;
+        if restore.is_some() {
+            tab.discarded = false;
+        }
+        drop(tabs);
 
         *lock(&self.inner.active)? = Some(id);
         events::emit_to_chrome(app, events::EV_TAB_ACTIVATED, IdPayload { id })?;
@@ -637,6 +718,7 @@ impl TabManager {
     }
 
     pub fn close(&self, app: &AppHandle, id: TabId) -> Result<()> {
+        let was_active = self.active_id() == Some(id);
         let (handle, closed) = {
             let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
@@ -658,15 +740,10 @@ impl TabManager {
             queue.truncate(RECENTLY_CLOSED_CAP);
         }
 
-        {
-            let mut order = lock(&self.inner.order)?;
-            if let Some(pos) = order.iter().position(|t| *t == id) {
-                order.remove(pos);
-            }
-        }
+        let neighbor = self.remove_from_order(id)?;
 
-        if self.active_id() == Some(id) {
-            if let Some(neighbor) = self.neighbor_of(id) {
+        if was_active {
+            if let Some(neighbor) = neighbor {
                 self.activate(app, neighbor)?;
             } else {
                 *lock(&self.inner.active)? = None;
@@ -677,14 +754,47 @@ impl TabManager {
         self.emit_snapshot(app)
     }
 
-    /// Right neighbor if any, otherwise the left neighbor; `None` when alone.
-    fn neighbor_of(&self, id: TabId) -> Option<TabId> {
-        let order = lock(&self.inner.order).ok()?;
-        let pos = order.iter().position(|t| *t == id)?;
-        order
-            .get(pos + 1)
-            .or_else(|| pos.checked_sub(1).and_then(|p| order.get(p)))
+    pub fn close_others(&self, app: &AppHandle, keep_id: TabId) -> Result<()> {
+        if self.tab(keep_id).is_err() {
+            return Err(Error::TabNotFound(keep_id.to_string()));
+        }
+        let ids = lock(&self.inner.order)?
+            .iter()
             .copied()
+            .filter(|id| *id != keep_id)
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.close(app, id)?;
+        }
+        self.activate(app, keep_id)
+    }
+
+    pub fn close_right(&self, app: &AppHandle, id: TabId) -> Result<()> {
+        let ids = {
+            let order = lock(&self.inner.order)?;
+            let position = order
+                .iter()
+                .position(|tab_id| *tab_id == id)
+                .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+            order.iter().skip(position + 1).copied().collect::<Vec<_>>()
+        };
+        for close_id in ids {
+            self.close(app, close_id)?;
+        }
+        Ok(())
+    }
+
+    fn remove_from_order(&self, id: TabId) -> Result<Option<TabId>> {
+        let mut order = lock(&self.inner.order)?;
+        let Some(pos) = order.iter().position(|tab_id| *tab_id == id) else {
+            return Ok(None);
+        };
+        let neighbor = order
+            .get(pos + 1)
+            .or_else(|| pos.checked_sub(1).and_then(|index| order.get(index)))
+            .copied();
+        order.remove(pos);
+        Ok(neighbor)
     }
 
     // ------------------------------------------------------------------
@@ -692,17 +802,27 @@ impl TabManager {
     // ------------------------------------------------------------------
 
     pub fn navigate(&self, app: &AppHandle, id: TabId, address: &str) -> Result<()> {
-        let url = Address::parse(address)?;
+        let search_engine = app
+            .try_state::<crate::state::AppState>()
+            .and_then(|state| {
+                lock(&state.settings)
+                    .ok()
+                    .map(|settings| settings.search_engine.clone())
+            })
+            .unwrap_or_else(|| crate::settings::Settings::default().search_engine);
+        let url = Address::resolve(address, &search_engine)?;
         nav_policy::validate(&url).map_err(|e| Error::NavigationBlocked(e.to_string()))?;
         let url_str = url.to_string();
 
         let is_active = self.active_id() == Some(id);
+        let handle = self.tab(id)?.handle;
+        handle.navigate(&url_str)?;
         {
             let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
                 .get_mut(&id)
                 .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-            tab.navigate(url)?;
+            tab.navlog.push(url_str.clone(), None);
             tab.on_load_started();
             tab.touch();
             // Navigating dismisses any open chrome-local page.
@@ -710,9 +830,10 @@ impl TabManager {
             // The tab is no longer a fresh about:blank, so its webview may
             // now paint over the chrome content area — but only when it is
             // the active tab (window.open tabs stay hidden until activated).
-            if is_active {
-                tab.handle.set_visible(true)?;
-            }
+        }
+        let overlay_open = *lock(&self.inner.chrome_overlay_open)?;
+        if is_active && !overlay_open {
+            handle.set_visible(true)?;
         }
 
         let (back, forward) = self.nav_state(id)?;
@@ -745,6 +866,12 @@ impl TabManager {
             return Ok(false);
         }
         tab.go_back()?;
+        {
+            let mut tabs = lock(&self.inner.tabs)?;
+            if let Some(tab) = tabs.get_mut(&id) {
+                tab.navlog.move_back();
+            }
+        }
         let (back, forward) = self.nav_state(id)?;
         events::emit_to_chrome(
             app,
@@ -764,6 +891,12 @@ impl TabManager {
             return Ok(false);
         }
         tab.go_forward()?;
+        {
+            let mut tabs = lock(&self.inner.tabs)?;
+            if let Some(tab) = tabs.get_mut(&id) {
+                tab.navlog.move_forward();
+            }
+        }
         let (back, forward) = self.nav_state(id)?;
         events::emit_to_chrome(
             app,
@@ -817,13 +950,19 @@ impl TabManager {
     }
 
     pub fn set_zoom(&self, app: &AppHandle, id: TabId, factor: f64) -> Result<f64> {
-        let actual = {
+        let actual = if factor.is_finite() {
+            factor.clamp(0.25, 5.0)
+        } else {
+            1.0
+        };
+        self.tab(id)?.handle.set_zoom(actual)?;
+        {
             let mut tabs = lock(&self.inner.tabs)?;
             let tab = tabs
                 .get_mut(&id)
                 .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
-            tab.set_zoom(factor)?
-        };
+            tab.zoom = actual;
+        }
         events::emit_to_chrome(
             app,
             events::EV_ZOOM_CHANGED,
@@ -1066,23 +1205,21 @@ mod tests {
     }
 
     #[test]
-    fn neighbor_prefers_right_then_left() {
+    fn remove_from_order_prefers_right_then_left() {
         let manager = TabManager::new();
-        {
-            let mut tabs = manager.inner.tabs.lock().unwrap();
-            let mut order = manager.inner.order.lock().unwrap();
-            for id in [1u64, 2, 3] {
-                tabs.insert(
-                    id,
-                    Tab::new(id, crate::webview::mock::MockWebviewHandle::bind()),
-                );
-                order.push(id);
-            }
-        }
-        assert_eq!(manager.neighbor_of(2), Some(3));
-        assert_eq!(manager.neighbor_of(3), Some(2));
-        assert_eq!(manager.neighbor_of(1), Some(2));
-        assert_eq!(manager.neighbor_of(99), None);
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
+        assert_eq!(manager.remove_from_order(2).unwrap(), Some(3));
+        assert_eq!(manager.remove_from_order(3).unwrap(), Some(1));
+        assert_eq!(manager.remove_from_order(1).unwrap(), None);
+        assert_eq!(manager.remove_from_order(99).unwrap(), None);
+    }
+
+    #[test]
+    fn removing_active_order_entry_preserves_its_neighbor() {
+        let manager = TabManager::new();
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
+        assert_eq!(manager.remove_from_order(2).unwrap(), Some(3));
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 3]);
     }
 
     #[test]

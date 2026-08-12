@@ -22,10 +22,21 @@ mod tests {
             // Tauri 2 capability files hold a single object (not an array).
             std::iter::once(&parsed),
         ) {
-            let Some(windows) = entry.get("windows").and_then(Value::as_array) else {
-                continue;
-            };
-            for label in windows {
+            let windows = entry
+                .get("windows")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            assert!(
+                windows.is_empty(),
+                "multi-webview capabilities must use `webviews`; a window match grants access to every child tab"
+            );
+            let webviews = entry
+                .get("webviews")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for label in webviews {
                 let label = label.as_str().expect("window labels must be strings");
                 assert!(
                     !label.starts_with("tab-"),

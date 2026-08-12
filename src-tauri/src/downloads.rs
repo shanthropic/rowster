@@ -55,7 +55,8 @@ pub fn on_download_requested(
 
     // Ask-before-download prompt, unless the tab holds a one-shot bypass for
     // this exact URL (set when the user allowed the previous prompt).
-    if settings(app).ask_before_download && !tabs.take_pending_download(tab_id, url) {
+    let pending_id = tabs.take_pending_download(tab_id, url);
+    if settings(app).ask_before_download && pending_id.is_none() {
         let row = match insert_download(app, tab_id, url, &filename, None) {
             Ok(row) => row,
             Err(e) => {
@@ -63,6 +64,14 @@ pub fn on_download_requested(
                 return false;
             }
         };
+        if let Some(state) = app.try_state::<AppState>()
+            && let Err(error) = state
+                .db
+                .with_conn(|conn| repos::downloads::mark_requested(conn, row.id))
+        {
+            log::error!("download prompt record failed: {error}");
+            return false;
+        }
         let _ = events::emit_to_chrome(
             app,
             events::EV_DOWNLOAD_REQUESTED,
@@ -78,29 +87,60 @@ pub fn on_download_requested(
 
     // Accept: point the engine at the unique destination and record it.
     *destination = dest.clone();
-    let row = match insert_download(app, tab_id, url, &filename, dest.to_str()) {
-        Ok(row) => row,
-        Err(e) => {
-            log::error!("download record failed: {e}");
-            return false;
-        }
+    let row = match pending_id {
+        Some(id) => match start_pending_download(app, id, dest.to_str()) {
+            Ok(row) => row,
+            Err(e) => {
+                log::error!("pending download start failed: {e}");
+                return false;
+            }
+        },
+        None => match insert_download(app, tab_id, url, &filename, dest.to_str()) {
+            Ok(row) => row,
+            Err(e) => {
+                log::error!("download record failed: {e}");
+                return false;
+            }
+        },
     };
     let _ = events::emit_to_chrome(app, events::EV_DOWNLOAD_STARTED, row.clone());
     log::info!("download started: {filename} → {}", dest.display());
     true
 }
 
+fn start_pending_download(
+    app: &AppHandle,
+    id: i64,
+    path: Option<&str>,
+) -> Result<repos::downloads::Download> {
+    let Some(state) = app.try_state::<AppState>() else {
+        return Err(Error::Other("state unavailable".into()));
+    };
+    state.db.with_conn(|conn| {
+        repos::downloads::start_pending(conn, id, path)?;
+        repos::downloads::by_id(conn, id)?
+            .ok_or_else(|| Error::TabNotFound(format!("download {id}")))
+    })
+}
+
 /// Engine hook for `on_download` Finished: finalize the row and notify.
-pub fn on_download_finished(app: &AppHandle, url: &str, success: bool) {
+pub fn on_download_finished(app: &AppHandle, url: &str, path: Option<&Path>, success: bool) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
     let db = state.db.clone();
     let url = url.to_string();
+    let path = path.map(Path::to_path_buf);
     let app = app.clone();
     std::thread::spawn(move || {
         let result: Result<Option<repos::downloads::Download>> = db.with_conn(|conn| {
-            let Some(mut row) = repos::downloads::latest_by_url(conn, &url)? else {
+            let row = match path.as_deref() {
+                Some(path) => {
+                    repos::downloads::active_by_path(conn, path.to_string_lossy().as_ref())?
+                }
+                None => repos::downloads::latest_by_url(conn, &url)?,
+            };
+            let Some(mut row) = row else {
                 return Ok(None);
             };
             // Never downgrade an explicit cancel/failed state from a stray event.
@@ -309,26 +349,19 @@ pub fn cancel(app: &AppHandle, id: i64) -> Result<()> {
     };
     let db = state.db.clone();
     let app = app.clone();
-    std::thread::spawn(move || {
-        let result: Result<()> = db.with_conn(|conn| {
-            let Some(row) = repos::downloads::by_id(conn, id)? else {
-                return Err(Error::TabNotFound(format!("download {id}")));
-            };
-            if let Some(path) = row.path {
-                // Partial file may already be gone; cancellation still succeeds.
-                let _ = std::fs::remove_file(path);
-            }
-            repos::downloads::finish(conn, id, "cancelled", Some("cancelled by user"))
-        });
-        match result {
-            Ok(()) => {
-                if let Ok(Some(row)) = db.with_conn(|conn| repos::downloads::by_id(conn, id)) {
-                    let _ = events::emit_to_chrome(&app, events::EV_DOWNLOAD_CANCELLED, row);
-                }
-            }
-            Err(e) => log::error!("download cancel failed: {e}"),
-        }
-    });
+    let row = db
+        .with_conn(|conn| repos::downloads::by_id(conn, id))?
+        .ok_or_else(|| Error::TabNotFound(format!("download {id}")))?;
+    if let Some(path) = row.path {
+        // Partial file may already be gone; cancellation still succeeds.
+        let _ = std::fs::remove_file(path);
+    }
+    db.with_conn(|conn| {
+        repos::downloads::finish(conn, id, "cancelled", Some("cancelled by user"))
+    })?;
+    if let Some(row) = db.with_conn(|conn| repos::downloads::by_id(conn, id))? {
+        events::emit_to_chrome(&app, events::EV_DOWNLOAD_CANCELLED, row)?;
+    }
     Ok(())
 }
 
@@ -346,7 +379,7 @@ pub fn retry(app: &AppHandle, tabs: &TabManager, id: i64) -> Result<()> {
     if let Some(tab_id) = row.tab_id
         && let Some(tab_id) = u64::try_from(tab_id).ok()
     {
-        tabs.allow_next_download(tab_id, &url)?;
+        tabs.allow_next_download(tab_id, id, &url)?;
         return tabs.navigate(app, tab_id, &url);
     }
     tabs.create_with_url(app, &url)?;

@@ -33,6 +33,9 @@ pub fn run() {
             commands::tab_create,
             commands::tab_activate,
             commands::tab_close,
+            commands::tab_close_others,
+            commands::tab_close_right,
+            commands::tab_duplicate,
             commands::navigate,
             commands::go_back,
             commands::go_forward,
@@ -44,7 +47,7 @@ pub fn run() {
             commands::zoom_out,
             commands::zoom_reset,
             commands::chrome_layout_changed,
-            commands::layout_diag,
+            commands::chrome_overlay_changed,
             commands::settings_get,
             commands::settings_set,
             commands::history_query,
@@ -78,7 +81,6 @@ pub fn run() {
             commands::find_close,
             commands::tab_mute,
             commands::tab_discard,
-            commands::tab_set_visible,
         ])
         .register_uri_scheme_protocol("favicon", |ctx, request| {
             use tauri::http::{Response, StatusCode, header};
@@ -131,11 +133,15 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
         tabs: TabManager::new(),
         db: std::sync::Arc::new(db),
         settings: std::sync::Arc::new(std::sync::Mutex::new(Settings::default())),
+        settings_write: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         session: std::sync::Arc::new(Session::new(data_dir.clone())),
         permissions: std::sync::Arc::new(crate::permissions::PermissionBroker::default()),
         find: std::sync::Arc::new(crate::find::FindBroker::default()),
         favicons: std::sync::Arc::new(crate::favicons::FaviconCache::new(
             data_dir.join("favicons"),
+        )),
+        pending_executable_open: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashSet::new(),
         )),
     };
 
@@ -207,8 +213,13 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
 /// Restores the saved session when present; returns whether anything was
 /// restored.
 fn restore_session(app: &AppHandle, state: &AppState) -> Result<bool> {
-    let Some(file) = state.session.load()? else {
-        return Ok(false);
+    let file = match state.session.load() {
+        Ok(Some(file)) => file,
+        Ok(None) => return Ok(false),
+        Err(error) => {
+            log::error!("session restore failed; opening a fresh tab: {error}");
+            return Ok(false);
+        }
     };
     let has_tabs = file.windows.iter().any(|w| !w.tabs.is_empty());
     if !has_tabs {
