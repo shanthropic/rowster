@@ -6,8 +6,8 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { Divider } from "@astryxdesign/core/Divider";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import {
   downloadCancel,
@@ -93,16 +93,34 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
           />
         ) : (
           <List density="compact" hasDividers style={{ width: "100%" }}>
-            {downloads.map((download) => (
+            {downloads.map((download) => {
+              const inProgress =
+                download.status === "active" || download.status === "requested";
+              const total = download.total_bytes ?? 0;
+              const percent = total > 0 ? (download.received_bytes / total) * 100 : 0;
+              return (
               <ListItem
                 key={download.id}
                 label={download.filename}
-                description={`${statusLabel(download.status)} · ${download.url}`}
+                description={
+                  <VStack gap={1}>
+                    <Text type="supporting" size="sm">
+                      {statusLabel(download.status)} · {download.url}
+                    </Text>
+                    {inProgress ? (
+                      <ProgressBar
+                        label={`Progress of ${download.filename}`}
+                        isIndeterminate={total <= 0}
+                        value={percent}
+                        max={100}
+                        isLabelHidden
+                        hasValueLabel={total > 0}
+                      />
+                    ) : null}
+                  </VStack>
+                }
                 endContent={
                   <HStack gap={1} align="center">
-                    {download.status === "active" ? (
-                      <Spinner size="sm" aria-label="Downloading" />
-                    ) : null}
                     {download.status === "completed" && download.path ? (
                       <>
                         <IconButton
@@ -139,7 +157,7 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                         }}
                       />
                     ) : null}
-                    {download.status === "active" || download.status === "requested" ? (
+                    {inProgress ? (
                       <IconButton
                         size="sm"
                         variant="ghost"
@@ -154,11 +172,13 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                   </HStack>
                 }
               />
-            ))}
+              );
+            })}
           </List>
         )}
         <Text type="supporting" size="sm">
-          Progress percentages depend on the native webview engine. Active downloads
+          Active downloads show an indeterminate progress bar: the native webview
+          engines do not expose byte-level progress through Tauri in v1. Rows
           remain visible until the engine reports completion or cancellation.
         </Text>
       </VStack>
