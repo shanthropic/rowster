@@ -7,7 +7,7 @@ const CSP = {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https: http:",
+    "img-src 'self' data: blob: favicon: http://favicon.localhost",
     "font-src 'self' data:",
     "connect-src ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420",
     "object-src 'none'",
@@ -18,7 +18,7 @@ const CSP = {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https: http:",
+    "img-src 'self' data: blob: favicon: http://favicon.localhost",
     "font-src 'self' data:",
     "connect-src ipc: http://ipc.localhost",
     "object-src 'none'",
@@ -59,8 +59,18 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../dist",
+    outDir: "dist",
     emptyOutDir: true,
     target: "es2022",
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/@astryxdesign")) return "astryx";
+          if (id.includes("node_modules/lucide-react")) return "icons";
+          if (id.includes("node_modules/@tauri-apps")) return "tauri";
+          if (id.includes("node_modules/react")) return "react";
+        },
+      },
+    },
   },
 });

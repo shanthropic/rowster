@@ -5,7 +5,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { EV, findNext, findPrev, findStart, onChromeEvent } from "../ipc";
+import { EV, findNext, findPrev, findStart, onChromeEvent, runCommand } from "../ipc";
 import type { FindStatusPayload, TabId } from "../types";
 
 interface FindBarProps {
@@ -25,7 +25,7 @@ export default function FindBar({ tabId, onClose }: FindBarProps) {
   const runStart = useCallback(
     (q: string, cs: boolean) => {
       setCount(undefined);
-      void findStart(tabId, q, cs);
+      runCommand("Find in page", findStart(tabId, q, cs));
     },
     [tabId]
   );
@@ -59,9 +59,9 @@ export default function FindBar({ tabId, onClose }: FindBarProps) {
     if (e.key === "Enter") {
       e.preventDefault();
       if (e.shiftKey) {
-        void findPrev(tabId);
+        runCommand("Previous match", findPrev(tabId));
       } else {
-        void findNext(tabId);
+        runCommand("Next match", findNext(tabId));
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -83,14 +83,10 @@ export default function FindBar({ tabId, onClose }: FindBarProps) {
       ref={containerRef}
       variant="muted"
       padding={2}
-      dividers={["bottom", "start", "end"]}
+      dividers={["top"]}
       style={{
-        position: "absolute",
-        top: "var(--spacing-2)",
-        right: "var(--spacing-3)",
-        zIndex: 40,
-        boxShadow: "var(--elevation-med)",
-        borderRadius: "var(--radius-md)",
+        display: "flex",
+        justifyContent: "flex-end",
       }}
       onKeyDown={onKeyDown}
     >
@@ -114,7 +110,7 @@ export default function FindBar({ tabId, onClose }: FindBarProps) {
           label="Previous match (Shift+Enter)"
           icon={<ChevronUp size={14} />}
           tooltip="Previous match"
-          onClick={() => void findPrev(tabId)}
+          onClick={() => runCommand("Previous match", findPrev(tabId))}
         />
         <IconButton
           size="sm"
@@ -122,7 +118,7 @@ export default function FindBar({ tabId, onClose }: FindBarProps) {
           label="Next match (Enter)"
           icon={<ChevronDown size={14} />}
           tooltip="Next match"
-          onClick={() => void findNext(tabId)}
+          onClick={() => runCommand("Next match", findNext(tabId))}
         />
         <IconButton
           size="sm"

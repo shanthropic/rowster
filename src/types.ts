@@ -95,7 +95,7 @@ export interface Bookmark {
 }
 
 /** Mirrors repos/downloads.rs Download. */
-export type DownloadStatus = "active" | "completed" | "cancelled" | "failed";
+export type DownloadStatus = "requested" | "active" | "completed" | "cancelled" | "failed";
 
 export interface Download {
   id: number;

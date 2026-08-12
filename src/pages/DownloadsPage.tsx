@@ -16,6 +16,9 @@ import {
   downloadRetry,
   downloadReveal,
   downloadsList,
+  EV,
+  onChromeEvent,
+  runCommand,
 } from "../ipc";
 import type { Download } from "../types";
 
@@ -25,6 +28,8 @@ export interface DownloadsPageProps {
 
 function statusLabel(status: Download["status"]): string {
   switch (status) {
+    case "requested":
+      return "Waiting for approval";
     case "active":
       return "Downloading";
     case "completed":
@@ -44,14 +49,26 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    runCommand("Load downloads", refresh());
+    const events = [
+      EV.DOWNLOAD_STARTED,
+      EV.DOWNLOAD_COMPLETED,
+      EV.DOWNLOAD_FAILED,
+      EV.DOWNLOAD_CANCELLED,
+    ];
+    const unlisteners = events.map((event) =>
+      onChromeEvent<unknown>(event, () => runCommand("Refresh downloads", refresh()))
+    );
+    return () => {
+      for (const unlisten of unlisteners) void unlisten.then((fn) => fn());
+    };
   }, [refresh]);
 
   const isEmpty = downloads !== null && downloads.length === 0;
 
   return (
     <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "80%" }}>
+      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
         <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
           <Heading level={2}>Downloads</Heading>
           <HStack gap={2} align="center">
@@ -60,7 +77,7 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
               variant="ghost"
               label="Clear finished downloads"
               icon={<Trash2 size={16} />}
-              onClick={() => void downloadClear().then(() => void refresh())}
+              onClick={() => runCommand("Clear downloads", downloadClear().then(refresh))}
               tooltip="Clear finished downloads"
             />
             <IconButton size="sm" variant="ghost" label="Close downloads" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
@@ -95,7 +112,7 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                           icon={<FolderOpen size={14} />}
                           onClick={(e) => {
                             e.stopPropagation();
-                            void downloadOpen(download.id);
+                            runCommand("Open download", downloadOpen(download.id));
                           }}
                         />
                         <IconButton
@@ -105,7 +122,7 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                           icon={<DownloadIcon size={14} />}
                           onClick={(e) => {
                             e.stopPropagation();
-                            void downloadReveal(download.id);
+                            runCommand("Reveal download", downloadReveal(download.id));
                           }}
                         />
                       </>
@@ -118,11 +135,11 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                         icon={<RotateCw size={14} />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void downloadRetry(download.id);
+                          runCommand("Retry download", downloadRetry(download.id));
                         }}
                       />
                     ) : null}
-                    {download.status === "active" ? (
+                    {download.status === "active" || download.status === "requested" ? (
                       <IconButton
                         size="sm"
                         variant="ghost"
@@ -130,7 +147,7 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                         icon={<XCircle size={14} />}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void downloadCancel(download.id).then(() => void refresh());
+                          runCommand("Cancel download", downloadCancel(download.id).then(refresh));
                         }}
                       />
                     ) : null}
@@ -141,8 +158,8 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
           </List>
         )}
         <Text type="supporting" size="sm">
-          Progress percentages are indeterminate on macOS and Linux in v1; the
-          tray shows a spinner while a download is active.
+          Progress percentages depend on the native webview engine. Active downloads
+          remain visible until the engine reports completion or cancellation.
         </Text>
       </VStack>
     </VStack>

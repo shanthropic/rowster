@@ -3,7 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { bookmarksList, EV, onChromeEvent, settingsGet } from "../ipc";
+import { bookmarksList, EV, onChromeEvent, runCommand, settingsGet } from "../ipc";
 import type { Bookmark, TabId } from "../types";
 
 export interface BookmarkBarProps {
@@ -17,24 +17,18 @@ export default function BookmarkBar({ activeId, onNavigate }: BookmarkBarProps) 
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
-    void settingsGet().then((settings) => {
-      if (!cancelled) setVisible(settings.show_bookmark_bar);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     const refresh = async () => {
       const [settings, list] = await Promise.all([settingsGet(), bookmarksList()]);
       setVisible(settings.show_bookmark_bar);
       setBookmarks(list.filter((b) => b.parent_id === null));
     };
-    void refresh();
-    const unlisten = onChromeEvent<unknown>(EV.SETTINGS_CHANGED, () => void refresh());
-    const unlistenBookmarks = onChromeEvent<unknown>(EV.BOOKMARKS_CHANGED, () => void refresh());
+    runCommand("Load bookmark bar", refresh());
+    const unlisten = onChromeEvent<unknown>(EV.SETTINGS_CHANGED, () =>
+      runCommand("Refresh bookmark bar", refresh())
+    );
+    const unlistenBookmarks = onChromeEvent<unknown>(EV.BOOKMARKS_CHANGED, () =>
+      runCommand("Refresh bookmark bar", refresh())
+    );
     return () => {
       void unlisten.then((fn) => fn());
       void unlistenBookmarks.then((fn) => fn());

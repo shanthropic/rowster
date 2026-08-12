@@ -4,7 +4,6 @@ import {
   Bookmark,
   Download,
   History,
-  Info,
   Plus,
   RotateCw,
   Search,
@@ -14,60 +13,53 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Text } from "@astryxdesign/core/Text";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { HStack } from "@astryxdesign/core/HStack";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { Section } from "@astryxdesign/core/Section";
+import { Text } from "@astryxdesign/core/Text";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import type { TabId, TabInfo } from "../types";
 import AddressBar from "./AddressBar";
 
-export interface ToolbarProps {
+export interface NavigationBarProps {
   tab: TabInfo | null;
   onNavigate: (address: string) => void;
   onBack: (id: TabId) => void;
   onForward: (id: TabId) => void;
   onReload: (id: TabId) => void;
-  onHardReload: (id: TabId) => void;
   onStop: (id: TabId) => void;
-  onNewTab: () => void;
   onZoomIn: (id: TabId) => void;
   onZoomOut: (id: TabId) => void;
   onZoomReset: (id: TabId) => void;
-  onShowHistory: () => void;
-  onShowSettings: () => void;
-  onShowBookmarks: () => void;
-  onShowDownloads: () => void;
+  onHardReload: (id: TabId) => void;
+  onNewTab: () => void;
   onReopenClosed: () => void;
+  onFind: () => void;
+  onShowPage: (page: "history" | "bookmarks" | "downloads" | "settings") => void;
 }
 
-/** Row 2 of the chrome: navigation cluster, address bar, zoom, app menu. */
-export default function BrowserToolbar({
+/** Navigation controls remain available without the former browser menu toolbar. */
+export default function NavigationBar({
   tab,
   onNavigate,
   onBack,
   onForward,
   onReload,
-  onHardReload,
   onStop,
-  onNewTab,
   onZoomIn,
   onZoomOut,
   onZoomReset,
-  onShowHistory,
-  onShowSettings,
-  onShowBookmarks,
-  onShowDownloads,
+  onHardReload,
+  onNewTab,
   onReopenClosed,
-}: ToolbarProps) {
+  onFind,
+  onShowPage,
+}: NavigationBarProps) {
   const id = tab?.id ?? null;
 
   return (
-    <Toolbar
-      label="Browser toolbar"
-      size="md"
-      gap={1}
-      startContent={
+    <Section variant="transparent" padding={1}>
+      <HStack gap={1} align="center" style={{ minWidth: 0 }}>
         <HStack gap={0} align="center">
           <IconButton
             size="sm"
@@ -100,10 +92,10 @@ export default function BrowserToolbar({
             tooltip={tab?.loading ? "Stop (Esc)" : "Reload (Ctrl+R)"}
           />
         </HStack>
-      }
-      centerContent={<AddressBar tab={tab} onNavigate={onNavigate} />}
-      endContent={
-        <HStack gap={0} align="center">
+        <HStack gap={0} style={{ minWidth: 0, flex: 1 }}>
+          <AddressBar tab={tab} onNavigate={onNavigate} />
+        </HStack>
+        <HStack gap={0} align="center" className="browser-zoom-controls">
           <IconButton
             size="sm"
             variant="ghost"
@@ -125,50 +117,27 @@ export default function BrowserToolbar({
             onClick={() => id !== null && onZoomIn(id)}
             tooltip="Zoom in (Ctrl++)"
           />
-          <MoreMenu
-            size="sm"
-            variant="ghost"
-            label="Browser menu"
-            items={[
-              { label: "New Tab", icon: <Plus size={14} />, onClick: onNewTab },
-              {
-                label: "Hard Reload",
-                icon: <RotateCw size={14} />,
-                isDisabled: !tab,
-                onClick: () => id !== null && onHardReload(id),
-              },
-              { type: "divider" },
-              {
-                label: "Reset Zoom",
-                isDisabled: !tab || tab.zoom === 1,
-                onClick: () => id !== null && onZoomReset(id),
-              },
-              { type: "divider" },
-              {
-                label: "Reopen Closed Tab",
-                icon: <Undo2 size={14} />,
-                onClick: onReopenClosed,
-              },
-              { type: "divider" },
-              { label: "Find in Page", icon: <Search size={14} />, isDisabled: true },
-              {
-                label: "Downloads",
-                icon: <Download size={14} />,
-                onClick: onShowDownloads,
-              },
-              {
-                label: "Bookmarks",
-                icon: <Bookmark size={14} />,
-                onClick: onShowBookmarks,
-              },
-              { label: "History", icon: <History size={14} />, onClick: onShowHistory },
-              { label: "Settings", icon: <Settings size={14} />, onClick: onShowSettings },
-              { type: "divider" },
-              { label: "About Rowster", icon: <Info size={14} />, isDisabled: true },
-            ]}
-          />
         </HStack>
-      }
-    />
+        <MoreMenu
+          size="sm"
+          variant="ghost"
+          label="Rowster menu"
+          items={[
+            { label: "New tab", icon: <Plus size={14} />, onClick: onNewTab },
+            { label: "Reopen closed tab", icon: <Undo2 size={14} />, onClick: onReopenClosed },
+            { type: "divider" },
+            { label: "Find in page", icon: <Search size={14} />, onClick: onFind, isDisabled: !tab || tab.is_new },
+            { label: "History", icon: <History size={14} />, onClick: () => onShowPage("history") },
+            { label: "Bookmarks", icon: <Bookmark size={14} />, onClick: () => onShowPage("bookmarks") },
+            { label: "Downloads", icon: <Download size={14} />, onClick: () => onShowPage("downloads") },
+            { type: "divider" },
+            { label: "Hard reload", icon: <RotateCw size={14} />, isDisabled: !tab, onClick: () => id !== null && onHardReload(id) },
+            { label: "Reset zoom", isDisabled: !tab || tab.zoom === 1, onClick: () => id !== null && onZoomReset(id) },
+            { type: "divider" },
+            { label: "Settings", icon: <Settings size={14} />, onClick: () => onShowPage("settings") },
+          ]}
+        />
+      </HStack>
+    </Section>
   );
 }

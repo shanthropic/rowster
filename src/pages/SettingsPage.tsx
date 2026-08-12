@@ -13,6 +13,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Switch } from "@astryxdesign/core/Switch";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { Banner } from "@astryxdesign/core/Banner";
 import { clearBrowsingData, permissionsList, permissionReset, permissionResetAll, settingsGet, settingsSet } from "../ipc";
 import type { PermissionKind, Settings, SettingsPatch, SitePermission, ThemeMode } from "../types";
 
@@ -39,18 +40,21 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
   const [draft, setDraft] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<SitePermission[] | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void settingsGet().then((loaded) => {
-      if (!cancelled) {
-        setSettings(loaded);
-        setDraft(loaded);
-      }
-    });
-    void permissionsList().then((loaded) => {
-      if (!cancelled) setPermissions(loaded);
-    });
+    void Promise.all([settingsGet(), permissionsList()])
+      .then(([loadedSettings, loadedPermissions]) => {
+        if (!cancelled) {
+          setSettings(loadedSettings);
+          setDraft(loadedSettings);
+          setPermissions(loadedPermissions);
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) setError(String(loadError));
+      });
     return () => {
       cancelled = true;
     };
@@ -58,20 +62,29 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
 
   const update = (patch: SettingsPatch) => {
     if (!draft) return;
-    const next = { ...draft, ...patch };
-    setDraft(next);
+    setDraft({ ...draft, ...patch });
     setError(null);
-    void settingsSet(patch)
+  };
+
+  const save = () => {
+    if (!draft) return;
+    setSaving(true);
+    void settingsSet({ ...draft, download_dir: draft.download_dir ?? "" })
       .then((persisted) => {
         setSettings(persisted);
         setDraft(persisted);
         setError(null);
+        window.dispatchEvent(
+          new CustomEvent("rowster:settings-changed", { detail: persisted })
+        );
       })
       .catch((e: unknown) => {
         setError(String(e));
-        if (settings) setDraft(settings);
-      });
+      })
+      .finally(() => setSaving(false));
   };
+
+  const isDirty = settings !== null && draft !== null && JSON.stringify(settings) !== JSON.stringify(draft);
 
   const customEngine = draft
     ? SEARCH_ENGINE_PRESETS.some((p) => p.template === draft.search_engine)
@@ -96,29 +109,54 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
         : "Allow once";
 
   const resetRow = (origin: string, kind: PermissionKind) => {
-    void permissionReset(origin, kind).then(() => {
-      setPermissions((current) =>
-        current ? current.filter((p) => p.origin !== origin || p.kind !== kind) : current
-      );
-    });
+    void permissionReset(origin, kind)
+      .then(() => {
+        setPermissions((current) =>
+          current ? current.filter((p) => p.origin !== origin || p.kind !== kind) : current
+        );
+      })
+      .catch((resetError: unknown) => setError(String(resetError)));
   };
 
   const resetAll = () => {
-    void permissionResetAll().then(() => setPermissions([]));
+    void permissionResetAll()
+      .then(() => setPermissions([]))
+      .catch((resetError: unknown) => setError(String(resetError)));
   };
 
   return (
     <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "60%" }}>
+      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 16))" }}>
         <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
           <Heading level={2}>Settings</Heading>
-          <IconButton size="sm" variant="ghost" label="Close settings" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
+          <HStack gap={2} align="center">
+            <Button
+              label="Reset"
+              variant="ghost"
+              size="sm"
+              isDisabled={!isDirty || saving}
+              onClick={() => settings && setDraft(settings)}
+            />
+            <Button
+              label="Save changes"
+              variant="primary"
+              size="sm"
+              isDisabled={!isDirty}
+              isLoading={saving}
+              onClick={save}
+            />
+            <IconButton size="sm" variant="ghost" label="Close settings" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
+          </HStack>
         </HStack>
         <Divider />
         {error ? (
-          <Text type="supporting" style={{ color: "var(--color-danger-base)" }}>
-            {error}
-          </Text>
+          <Banner
+            status="error"
+            title="Settings were not saved"
+            description={error}
+            isDismissable
+            onDismiss={() => setError(null)}
+          />
         ) : null}
 
         {draft ? (
@@ -234,19 +272,25 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
                       label="History"
                       size="sm"
                       variant="secondary"
-                      onClick={() => void clearBrowsingData(["history"])}
+                      onClick={() => {
+                        void clearBrowsingData(["history"]).catch((clearError: unknown) => setError(String(clearError)));
+                      }}
                     />
                     <Button
                       label="Bookmarks"
                       size="sm"
                       variant="secondary"
-                      onClick={() => void clearBrowsingData(["bookmarks"])}
+                      onClick={() => {
+                        void clearBrowsingData(["bookmarks"]).catch((clearError: unknown) => setError(String(clearError)));
+                      }}
                     />
                     <Button
                       label="Downloads"
                       size="sm"
                       variant="secondary"
-                      onClick={() => void clearBrowsingData(["downloads"])}
+                      onClick={() => {
+                        void clearBrowsingData(["downloads"]).catch((clearError: unknown) => setError(String(clearError)));
+                      }}
                     />
                   </HStack>
                 </VStack>

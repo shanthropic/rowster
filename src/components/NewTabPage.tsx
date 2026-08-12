@@ -1,17 +1,14 @@
 import { useEffect, useState } from "react";
-import { Globe } from "lucide-react";
-import { Button } from "@astryxdesign/core/Button";
+import { Globe, Search } from "lucide-react";
 import { Center } from "@astryxdesign/core/Center";
+import { ClickableCard } from "@astryxdesign/core/ClickableCard";
 import { Grid } from "@astryxdesign/core/Grid";
-import { IconButton } from "@astryxdesign/core/IconButton";
 import { Text } from "@astryxdesign/core/Text";
 import { Heading } from "@astryxdesign/core/Heading";
-import { TextInput } from "@astryxdesign/core/TextInput";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { VStack } from "@astryxdesign/core/VStack";
-import { HStack } from "@astryxdesign/core/HStack";
 import { normalizeAddress } from "../nav";
-import { historyFrequent } from "../ipc";
+import { historyFrequent, runCommand } from "../ipc";
 import type { HistoryEntry } from "../types";
 
 export interface NewTabPageProps {
@@ -51,10 +48,13 @@ export default function NewTabPage({ onNavigate }: NewTabPageProps) {
 
   useEffect(() => {
     let alive = true;
-    void historyFrequent(8).then((entries) => {
-      if (alive) setFrequent(entries);
-    });
-    const clock = window.setInterval(() => setNow(new Date()), 1000);
+    runCommand(
+      "Load frequent sites",
+      historyFrequent(8).then((entries) => {
+        if (alive) setFrequent(entries);
+      })
+    );
+    const clock = window.setInterval(() => setNow(new Date()), 30_000);
     return () => {
       alive = false;
       window.clearInterval(clock);
@@ -78,19 +78,22 @@ export default function NewTabPage({ onNavigate }: NewTabPageProps) {
           <Text type="supporting">{formatDate(now)}</Text>
         </VStack>
       </Center>
-      <VStack gap={4} align="center" style={{ width: "60%" }}>
-        <TextInput
-          label="Address"
-          isLabelHidden
-          size="lg"
-          value={draft}
-          placeholder="Search or enter address"
-          onChange={setDraft}
-          onEnter={submit}
-          startIcon={<Globe size={18} />}
-          hasClear
-          style={{ width: "100%" }}
-        />
+      <VStack gap={4} align="center" style={{ width: "min(100%, calc(var(--spacing-12) * 14))" }}>
+        <label className="new-tab-search">
+          <Search size={18} aria-hidden="true" />
+          <input
+            value={draft}
+            aria-label="Search the web or enter an address"
+            placeholder="Search the web or enter an address"
+            autoCapitalize="off"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+          />
+        </label>
         {frequent.length > 0 ? (
           <VStack gap={3} align="center" style={{ width: "100%" }}>
             <Heading level={3}>Frequent</Heading>
@@ -100,31 +103,38 @@ export default function NewTabPage({ onNavigate }: NewTabPageProps) {
               style={{ width: "100%" }}
             >
               {frequent.map((entry) => (
-                <Button
+                <ClickableCard
                   key={entry.domain ?? entry.url}
-                  size="md"
-                  variant="secondary"
-                  label={siteLabel(entry)}
-                  icon={<Globe size={16} />}
+                  label={`Open ${siteLabel(entry)}`}
+                  variant="transparent"
+                  padding={3}
                   onClick={() => onNavigate(entry.url)}
-                />
+                >
+                  <VStack gap={2} align="center">
+                    <Globe size={18} />
+                    <Text type="label" maxLines={1}>{siteLabel(entry)}</Text>
+                  </VStack>
+                </ClickableCard>
               ))}
             </Grid>
           </VStack>
         ) : (
-          <HStack gap={2} align="center" wrap="wrap" justify="center">
+          <Grid columns={{ minWidth: 96, max: 5, repeat: "fill" }} gap={2} style={{ width: "100%" }}>
             {QUICK_LINKS.map((link) => (
-              <IconButton
+              <ClickableCard
                 key={link.label}
-                size="sm"
-                variant="ghost"
+                variant="transparent"
+                padding={3}
                 label={`Open ${link.label}`}
-                icon={<Globe size={14} />}
                 onClick={() => onNavigate(link.url)}
-                tooltip={link.label}
-              />
+              >
+                <VStack gap={2} align="center">
+                  <Globe size={18} />
+                  <Text type="label">{link.label}</Text>
+                </VStack>
+              </ClickableCard>
             ))}
-          </HStack>
+          </Grid>
         )}
         <Text type="supporting" size="xsm">
           Try Ctrl+L to focus the address bar

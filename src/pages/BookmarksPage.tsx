@@ -9,7 +9,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { bookmarkDelete, bookmarkEdit, bookmarksList } from "../ipc";
+import { bookmarkDelete, bookmarkEdit, bookmarksList, runCommand } from "../ipc";
 import type { Bookmark } from "../types";
 
 export interface BookmarksPageProps {
@@ -30,7 +30,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void refresh(query);
+      runCommand("Search bookmarks", refresh(query));
     }, 200);
     return () => window.clearTimeout(timer);
   }, [query, refresh]);
@@ -48,7 +48,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
     if (title === "" || url === "") return;
     await bookmarkEdit(editing.id, title, url);
     setEditing(null);
-    void refresh(query);
+    runCommand("Refresh bookmarks", refresh(query));
   };
 
   const onDelete = async (id: number) => {
@@ -62,7 +62,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
 
   return (
     <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "80%" }}>
+      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
         <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
           <Heading level={2}>Bookmarks</Heading>
           <IconButton
@@ -104,7 +104,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
               style={{ width: "100%" }}
             />
             <HStack gap={2}>
-              <Button label="Save" variant="primary" size="sm" onClick={() => void saveEdit()} />
+              <Button label="Save" variant="primary" size="sm" onClick={() => runCommand("Save bookmark", saveEdit())} />
               <Button label="Cancel" variant="ghost" size="sm" onClick={() => setEditing(null)} />
             </HStack>
             <Divider />
@@ -156,7 +156,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
                       icon={<Trash2 size={13} />}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void onDelete(bookmark.id);
+                        runCommand("Delete bookmark", onDelete(bookmark.id));
                       }}
                     />
                   </HStack>

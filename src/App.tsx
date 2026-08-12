@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { StackItem } from "@astryxdesign/core/Stack";
@@ -7,42 +7,45 @@ import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Button } from "@astryxdesign/core/Button";
 import { Text } from "@astryxdesign/core/Text";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { AppShell } from "@astryxdesign/core/AppShell";
 import TitleBar from "./components/TitleBar";
-import BrowserToolbar from "./components/Toolbar";
+import NavigationBar from "./components/NavigationBar";
+import BrowserSidebar from "./components/Sidebar";
 import BookmarkBar from "./components/BookmarkBar";
 import StatusBar from "./components/StatusBar";
+import BrowserErrorBanner from "./components/BrowserErrorBanner";
 import NewTabPage from "./components/NewTabPage";
 import FindBar from "./components/FindBar";
-import SettingsPage from "./pages/SettingsPage";
-import HistoryPage from "./pages/HistoryPage";
-import BookmarksPage from "./pages/BookmarksPage";
-import DownloadsPage from "./pages/DownloadsPage";
 import {
   chromeLayoutChanged,
+  chromeOverlayChanged,
   downloadOpenConfirm,
   downloadRespond,
   downloadsList,
   findClose,
   tabMute,
   tabDiscard,
+  tabDuplicate,
   goBack,
   goForward,
   hardReload,
-  layoutDiag,
   navigate,
   onChromeEvent,
   EV,
   permissionRespond,
   reload,
   reopenClosed,
+  runCommand,
   settingsGet,
   settingsSet,
   showChromePage,
   stop,
   tabActivate,
   tabClose,
+  tabCloseOthers,
+  tabCloseRight,
   tabCreate,
-  tabSetVisible,
   zoomIn,
   zoomOut,
   zoomReset,
@@ -55,71 +58,79 @@ import type {
 } from "./types";
 import { activeTabOf, useBrowserState } from "./state";
 
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const HistoryPage = lazy(() => import("./pages/HistoryPage"));
+const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
+const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
+
 export default function App() {
   const state = useBrowserState();
   const activeTab = activeTabOf(state);
   const activeId = activeTab?.id ?? null;
   const tabs = state.windows[0]?.tabs ?? [];
-const [pendingDownload, setPendingDownload] = useState<DownloadRequested | null>(null);
-const [openConfirm, setOpenConfirm] = useState<DownloadOpenConfirm | null>(null);
-const [pendingPermission, setPendingPermission] = useState<PermissionRequested | null>(null);
-const [statusbarVisible, setStatusbarVisible] = useState(false);
-const [findOpen, setFindOpen] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<DownloadRequested | null>(null);
+  const [openConfirm, setOpenConfirm] = useState<DownloadOpenConfirm | null>(null);
+  const [pendingPermission, setPendingPermission] = useState<PermissionRequested | null>(null);
+  const [statusbarVisible, setStatusbarVisible] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const sidebarWidthRef = useRef(0);
+
+  const sendLayout = useCallback(() => {
+    const chrome = document.getElementById("rowster-chrome");
+    if (!chrome) return;
+    const chromeRect = chrome.getBoundingClientRect();
+    let bottom = 0;
+    if (statusbarVisible) {
+      const statusbar = document.getElementById("rowster-statusbar");
+      if (statusbar) bottom = Math.ceil(statusbar.getBoundingClientRect().height);
+    }
+    runCommand(
+      "Update browser layout",
+      chromeLayoutChanged({
+        top: Math.round(chromeRect.bottom),
+        bottom,
+        left: Math.round(sidebarWidthRef.current),
+        right: 0,
+      })
+    );
+  }, [statusbarVisible]);
+
+  const handleSidebarWidthChange = useCallback(
+    (width: number) => {
+      sidebarWidthRef.current = width;
+      sendLayout();
+    },
+    [sendLayout]
+  );
 
   // Report the measured chrome height and status-bar height so Rust can lay
   // out the tab webviews between them.
   useEffect(() => {
-    const send = () => {
-      const chrome = document.getElementById("rowster-chrome");
-      if (!chrome) return;
-      const chromeRect = chrome.getBoundingClientRect();
-      let bottom = 0;
-      if (statusbarVisible) {
-        const statusbar = document.getElementById("rowster-statusbar");
-        if (statusbar) bottom = Math.ceil(statusbar.getBoundingClientRect().height);
-      }
-      console.log("[layout] chrome rect", {
-        top: chromeRect.top,
-        bottom: chromeRect.bottom,
-        height: chromeRect.height,
-        scrollY: window.scrollY,
-        innerHeight: window.innerHeight,
-        docScrollHeight: document.documentElement.scrollHeight,
-      });
-      void layoutDiag({
-        chromeTop: chromeRect.top,
-        chromeBottom: chromeRect.bottom,
-        scrollY: window.scrollY,
-        innerHeight: window.innerHeight,
-        docScrollHeight: document.documentElement.scrollHeight,
-      });
-      void chromeLayoutChanged({
-        top: Math.round(chromeRect.bottom),
-        bottom,
-        left: 0,
-        right: 0,
-      });
-    };
-    send();
-    const observer = new ResizeObserver(send);
+    sendLayout();
+    const observer = new ResizeObserver(sendLayout);
     const chrome = document.getElementById("rowster-chrome");
     if (chrome) observer.observe(chrome);
     const statusbar = document.getElementById("rowster-statusbar");
     if (statusbar) observer.observe(statusbar);
-    window.addEventListener("resize", send);
+    window.addEventListener("resize", sendLayout);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", send);
+      window.removeEventListener("resize", sendLayout);
     };
-  }, [statusbarVisible]);
+  }, [sendLayout]);
 
   // Track whether any download is active (drives the status bar + layout).
   useEffect(() => {
     const refreshActive = () => {
-      void downloadsList(50).then((list) => {
-        const active = list.some((d) => d.status === "active");
-        setStatusbarVisible(active);
-      });
+      runCommand(
+        "Refresh downloads",
+        downloadsList(50).then((list) => {
+          const active = list.some((d) => d.status === "active");
+          setStatusbarVisible(active);
+        })
+      );
     };
     void refreshActive();
     const events = [
@@ -135,6 +146,21 @@ const [findOpen, setFindOpen] = useState(false);
       for (const unlisten of unlisteners) void unlisten.then((fn) => fn());
     };
   }, []);
+
+  useEffect(() => {
+    const onToggle = () => {
+      requestAnimationFrame(() => {
+        setPopoverOpen(document.querySelectorAll("[popover]:popover-open").length > 0);
+      });
+    };
+    document.addEventListener("toggle", onToggle, true);
+    return () => document.removeEventListener("toggle", onToggle, true);
+  }, []);
+
+  const hasModal = pendingDownload !== null || openConfirm !== null || pendingPermission !== null;
+  useEffect(() => {
+    runCommand("Update chrome overlay", chromeOverlayChanged(hasModal || popoverOpen));
+  }, [hasModal, popoverOpen]);
 
   // Download prompts and executable-open confirmations.
   useEffect(() => {
@@ -171,59 +197,66 @@ const [findOpen, setFindOpen] = useState(false);
         target?.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
 
-      if (mod && e.key.toLowerCase() === "t") {
+      const key = e.key.toLowerCase();
+      if (mod && e.shiftKey && key === "t") {
         e.preventDefault();
-        void tabCreate();
-      } else if (mod && e.key.toLowerCase() === "f" && !inField) {
+        runCommand("Reopen closed tab", reopenClosed());
+      } else if (mod && e.shiftKey && key === "r" && !inField) {
+        e.preventDefault();
+        if (activeId !== null) runCommand("Hard reload", hardReload(activeId));
+      } else if (mod && e.shiftKey && key === "o") {
+        e.preventDefault();
+        runCommand("Open bookmarks", showChromePage("bookmarks"));
+      } else if (mod && key === "t") {
+        e.preventDefault();
+        runCommand("Create tab", tabCreate());
+      } else if (mod && key === "f") {
         e.preventDefault();
         setFindOpen(true);
-      } else if (mod && e.key.toLowerCase() === "w") {
+      } else if (mod && key === "w") {
         e.preventDefault();
-        if (activeId !== null) void tabClose(activeId);
-      } else if (mod && e.key.toLowerCase() === "l" && !inField) {
+        if (activeId !== null) runCommand("Close tab", tabClose(activeId));
+      } else if (mod && key === "l") {
         e.preventDefault();
         focusAddress();
-      } else if (mod && e.key.toLowerCase() === "r" && !inField) {
+      } else if (mod && key === "r" && !inField) {
         e.preventDefault();
-        if (activeId !== null) void reload(activeId);
-      } else if (mod && e.shiftKey && e.key.toLowerCase() === "r" && !inField) {
+        if (activeId !== null) runCommand("Reload", reload(activeId));
+      } else if (mod && key === "h" && !inField) {
         e.preventDefault();
-        if (activeId !== null) void hardReload(activeId);
-      } else if (mod && e.shiftKey && e.key.toLowerCase() === "t") {
+        runCommand("Open history", showChromePage("history"));
+      } else if (mod && key === "j") {
         e.preventDefault();
-        void reopenClosed();
-      } else if (mod && e.key.toLowerCase() === "h" && !inField) {
+        runCommand("Open downloads", showChromePage("downloads"));
+      } else if (mod && key === "b") {
         e.preventDefault();
-        void showChromePage("history");
-      } else if (mod && e.key.toLowerCase() === "j") {
-        e.preventDefault();
-        void showChromePage("downloads");
-      } else if (mod && e.shiftKey && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        void showChromePage("bookmarks");
-      } else if (mod && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        void (async () => {
+        runCommand("Toggle bookmark bar", (async () => {
           const settings = await settingsGet();
           await settingsSet({ show_bookmark_bar: !settings.show_bookmark_bar });
-        })();
+        })());
       } else if (mod && e.key === "," && !inField) {
         e.preventDefault();
-        void showChromePage("settings");
+        runCommand("Open settings", showChromePage("settings"));
       } else if (mod && e.key === "0" && !inField) {
         e.preventDefault();
-        if (activeId !== null) void zoomReset(activeId);
+        if (activeId !== null) runCommand("Reset zoom", zoomReset(activeId));
       } else if (mod && (e.key === "=" || e.key === "+") && !inField) {
         e.preventDefault();
-        if (activeId !== null) void zoomIn(activeId);
+        if (activeId !== null) runCommand("Zoom in", zoomIn(activeId));
       } else if (mod && e.key === "-" && !inField) {
         e.preventDefault();
-        if (activeId !== null) void zoomOut(activeId);
+        if (activeId !== null) runCommand("Zoom out", zoomOut(activeId));
+      } else if (e.altKey && e.key === "ArrowLeft" && activeId !== null) {
+        e.preventDefault();
+        runCommand("Go back", goBack(activeId));
+      } else if (e.altKey && e.key === "ArrowRight" && activeId !== null) {
+        e.preventDefault();
+        runCommand("Go forward", goForward(activeId));
       } else if (e.key === "F5") {
         e.preventDefault();
-        if (activeId !== null) void reload(activeId);
+        if (activeId !== null) runCommand("Reload", reload(activeId));
       } else if (e.key === "Escape") {
-        if (activeTab?.loading && activeId !== null) void stop(activeId);
+        if (activeTab?.loading && activeId !== null) runCommand("Stop loading", stop(activeId));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -233,7 +266,7 @@ const [findOpen, setFindOpen] = useState(false);
   const handleNavigate = useCallback(
     (address: string) => {
       if (activeId === null) return;
-      void navigate(activeId, address);
+      runCommand("Navigate", navigate(activeId, address));
     },
     [activeId]
   );
@@ -260,10 +293,14 @@ const [findOpen, setFindOpen] = useState(false);
   const respondPermission = (decision: PermissionDecision) => {
     if (!pendingPermission) return;
     const { origin, kind, tab_id } = pendingPermission;
-    void permissionRespond(origin, kind, decision);
-    if (decision === "allow_once" || decision === "always_allow") {
-      void reload(tab_id);
-    }
+    runCommand(
+      "Respond to permission",
+      permissionRespond(origin, kind, decision).then(() => {
+        if (decision === "allow_once" || decision === "always_allow") {
+          return reload(tab_id);
+        }
+      })
+    );
     setPendingPermission(null);
   };
 
@@ -272,131 +309,119 @@ const [findOpen, setFindOpen] = useState(false);
     setFindOpen(false);
   }, [activeId]);
 
-  // --- Chrome overlay visibility ------------------------------------------------
-  // Tauri child webviews (tab webviews) always render on top of the main
-  // webview at the OS level.  When a chrome overlay (MoreMenu popover,
-  // FindBar) is open, hide the active tab webview so it doesn't paint on
-  // top of the chrome UI.  When the overlay closes, show it again.
-  const findOpenRef = useRef(findOpen);
-  findOpenRef.current = findOpen;
-
-  useEffect(() => {
-    if (activeId === null) return;
-    const hasOpenPopovers = () =>
-      document.querySelectorAll("[popover]:popover-open").length > 0;
-    const handleToggle = (e: Event) => {
-      const target = e.target as HTMLElement;
-      if (!target.matches?.("[popover]")) return;
-      requestAnimationFrame(() => {
-        const hide = findOpenRef.current || hasOpenPopovers();
-        void tabSetVisible(activeId, !hide);
-      });
-    };
-    document.addEventListener("toggle", handleToggle, true);
-    return () => document.removeEventListener("toggle", handleToggle, true);
-  }, [activeId]);
-
-  useEffect(() => {
-    if (activeId === null) return;
-    const hide =
-      findOpen ||
-      document.querySelectorAll("[popover]:popover-open").length > 0;
-    void tabSetVisible(activeId, !hide);
-  }, [findOpen, activeId]);
-
   const closeFind = useCallback(() => {
     setFindOpen(false);
-    if (activeId !== null) void findClose(activeId);
+    if (activeId !== null) runCommand("Close find", findClose(activeId));
   }, [activeId]);
 
   return (
-    <VStack gap={0} style={{ height: "100%" }}>
-      <Section
-        id="rowster-chrome"
-        variant="transparent"
-        padding={0}
-        dividers={["bottom"]}
-      >
-        <VStack gap={0}>
-          <TitleBar
-            tabs={tabs}
-            activeId={activeId}
-            onActivate={(id) => void tabActivate(id)}
-            onClose={(id) => void tabClose(id)}
-            onNewTab={() => void tabCreate()}
-            onReload={(id) => void reload(id)}
-            onCloseOthers={(id) => {
-              for (const tab of tabs) {
-                if (tab.id !== id) void tabClose(tab.id);
-              }
-            }}
-            onCloseToRight={(id) => {
-              const idx = tabs.findIndex((t) => t.id === id);
-              for (const tab of tabs.slice(idx + 1)) void tabClose(tab.id);
-            }}
-            onToggleMute={(id) => {
-              const tab = tabs.find((t) => t.id === id);
-              if (tab) void tabMute(id, !tab.muted);
-            }}
-            onDiscard={(id) => void tabDiscard(id)}
-          />
-          <BrowserToolbar
-            tab={activeTab}
-            onNavigate={handleNavigate}
-            onBack={(id) => void goBack(id)}
-            onForward={(id) => void goForward(id)}
-            onReload={(id) => void reload(id)}
-            onHardReload={(id) => void hardReload(id)}
-            onStop={(id) => void stop(id)}
-            onNewTab={() => void tabCreate()}
-            onZoomIn={(id) => void zoomIn(id)}
-            onZoomOut={(id) => void zoomOut(id)}
-            onZoomReset={(id) => void zoomReset(id)}
-            onShowHistory={() => void showChromePage("history")}
-            onShowSettings={() => void showChromePage("settings")}
-            onShowBookmarks={() => void showChromePage("bookmarks")}
-            onShowDownloads={() => void showChromePage("downloads")}
-            onReopenClosed={() => void reopenClosed()}
-          />
-          <BookmarkBar
-            activeId={activeId}
-            onNavigate={(id, address) => void navigate(id, address)}
-          />
-        </VStack>
-      </Section>
-      <StackItem size="fill" style={{ position: "relative", minHeight: 0 }}>
-        {activeTab?.chrome_page === "settings" ? (
-          <SettingsPage onClose={() => void showChromePage(null)} />
-        ) : activeTab?.chrome_page === "history" ? (
-          <HistoryPage
-            onClose={() => void showChromePage(null)}
-            onNavigate={handleNavigate}
-          />
-        ) : activeTab?.chrome_page === "bookmarks" ? (
-          <BookmarksPage
-            onClose={() => void showChromePage(null)}
-            onNavigate={handleNavigate}
-          />
-        ) : activeTab?.chrome_page === "downloads" ? (
-          <DownloadsPage onClose={() => void showChromePage(null)} />
-        ) : activeTab?.is_new ? (
-          <NewTabPage onNavigate={handleNavigate} />
-        ) : null}
-        {findOpen && activeId !== null ? (
-          <FindBar tabId={activeId} onClose={closeFind} />
-        ) : null}
-      </StackItem>
-      <StatusBar
-        visible={statusbarVisible}
-        onOpenDownloads={() => void showChromePage("downloads")}
-      />
+    <AppShell
+      height="fill"
+      variant="section"
+      contentPadding={0}
+      mobileNav={false}
+      sideNav={
+        <BrowserSidebar
+          isOpen={sidebarOpen}
+          activePage={activeTab?.chrome_page ?? null}
+          onWidthChange={handleSidebarWidthChange}
+          onNewTab={() => runCommand("Create tab", tabCreate())}
+          onReopenClosed={() => runCommand("Reopen closed tab", reopenClosed())}
+          onFind={() => setFindOpen(true)}
+          onShowPage={(page) => runCommand("Open browser page", showChromePage(page))}
+        />
+      }
+    >
+      <VStack gap={0} style={{ height: "100%", minWidth: 0, flex: 1 }}>
+        <Section
+          id="rowster-chrome"
+          variant="transparent"
+          padding={0}
+          dividers={["bottom"]}
+        >
+          <VStack gap={0}>
+            <TitleBar
+              isSidebarOpen={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen((open) => !open)}
+              tabs={tabs}
+              activeId={activeId}
+              onActivate={(id) => runCommand("Activate tab", tabActivate(id))}
+              onClose={(id) => runCommand("Close tab", tabClose(id))}
+              onNewTab={() => runCommand("Create tab", tabCreate())}
+              onReload={(id) => runCommand("Reload tab", reload(id))}
+              onCloseOthers={(id) => runCommand("Close other tabs", tabCloseOthers(id))}
+              onCloseToRight={(id) => runCommand("Close tabs to the right", tabCloseRight(id))}
+              onToggleMute={(id) => {
+                const tab = tabs.find((t) => t.id === id);
+                if (tab) runCommand("Toggle tab audio", tabMute(id, !tab.muted));
+              }}
+              onDiscard={(id) => runCommand("Discard tab", tabDiscard(id))}
+              onDuplicate={(id) => runCommand("Duplicate tab", tabDuplicate(id))}
+            />
+            <NavigationBar
+              tab={activeTab}
+              onNavigate={handleNavigate}
+              onBack={(id) => runCommand("Go back", goBack(id))}
+              onForward={(id) => runCommand("Go forward", goForward(id))}
+              onReload={(id) => runCommand("Reload", reload(id))}
+              onStop={(id) => runCommand("Stop loading", stop(id))}
+              onZoomIn={(id) => runCommand("Zoom in", zoomIn(id))}
+              onZoomOut={(id) => runCommand("Zoom out", zoomOut(id))}
+              onZoomReset={(id) => runCommand("Reset zoom", zoomReset(id))}
+              onHardReload={(id) => runCommand("Hard reload", hardReload(id))}
+              onNewTab={() => runCommand("Create tab", tabCreate())}
+              onReopenClosed={() => runCommand("Reopen closed tab", reopenClosed())}
+              onFind={() => setFindOpen(true)}
+              onShowPage={(page) => runCommand("Open browser page", showChromePage(page))}
+            />
+            <BookmarkBar
+              activeId={activeId}
+              onNavigate={(id, address) => runCommand("Navigate", navigate(id, address))}
+            />
+            {findOpen && activeId !== null ? (
+              <FindBar tabId={activeId} onClose={closeFind} />
+            ) : null}
+          </VStack>
+        </Section>
+        <StackItem size="fill" style={{ position: "relative", minHeight: 0 }}>
+          <Suspense
+            fallback={
+              <HStack align="center" justify="center" style={{ height: "100%" }}>
+                <Spinner size="md" aria-label="Loading browser page" />
+              </HStack>
+            }
+          >
+            {activeTab?.chrome_page === "settings" ? (
+              <SettingsPage onClose={() => runCommand("Close settings", showChromePage(null))} />
+            ) : activeTab?.chrome_page === "history" ? (
+              <HistoryPage
+                onClose={() => runCommand("Close history", showChromePage(null))}
+                onNavigate={handleNavigate}
+              />
+            ) : activeTab?.chrome_page === "bookmarks" ? (
+              <BookmarksPage
+                onClose={() => runCommand("Close bookmarks", showChromePage(null))}
+                onNavigate={handleNavigate}
+              />
+            ) : activeTab?.chrome_page === "downloads" ? (
+              <DownloadsPage onClose={() => runCommand("Close downloads", showChromePage(null))} />
+            ) : activeTab?.is_new ? (
+              <NewTabPage onNavigate={handleNavigate} />
+            ) : null}
+          </Suspense>
+        </StackItem>
+        <StatusBar
+          visible={statusbarVisible}
+          onOpenDownloads={() => runCommand("Open downloads", showChromePage("downloads"))}
+        />
+        <BrowserErrorBanner />
 
-      {pendingDownload ? (
+        {pendingDownload ? (
         <AlertDialog
           isOpen
           onOpenChange={(open) => {
             if (!open && pendingDownload) {
-              void downloadRespond(pendingDownload.id, false);
+              runCommand("Block download", downloadRespond(pendingDownload.id, false));
               setPendingDownload(null);
             }
           }}
@@ -404,14 +429,14 @@ const [findOpen, setFindOpen] = useState(false);
           description={`${pendingDownload.filename} — Rowster is asking before starting this download.`}
           actionLabel="Allow"
           onAction={() => {
-            void downloadRespond(pendingDownload.id, true);
+            runCommand("Allow download", downloadRespond(pendingDownload.id, true));
             setPendingDownload(null);
           }}
           cancelLabel="Block"
         />
-      ) : null}
+        ) : null}
 
-      {openConfirm ? (
+        {openConfirm ? (
         <AlertDialog
           isOpen
           onOpenChange={(open) => {
@@ -421,14 +446,14 @@ const [findOpen, setFindOpen] = useState(false);
           description={`${openConfirm.filename} is an executable. Opening it may run code on your computer.`}
           actionLabel="Open"
           onAction={() => {
-            void downloadOpenConfirm(openConfirm.id);
+            runCommand("Open executable", downloadOpenConfirm(openConfirm.id));
             setOpenConfirm(null);
           }}
           cancelLabel="Cancel"
         />
-      ) : null}
+        ) : null}
 
-      {pendingPermission ? (
+        {pendingPermission ? (
         <Dialog
           isOpen
           onOpenChange={(open) => {
@@ -463,7 +488,8 @@ const [findOpen, setFindOpen] = useState(false);
             </HStack>
           </VStack>
         </Dialog>
-      ) : null}
-    </VStack>
+        ) : null}
+      </VStack>
+    </AppShell>
   );
 }

@@ -9,7 +9,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { historyClear, historyDelete, historyQuery } from "../ipc";
+import { historyClear, historyDelete, historyQuery, runCommand } from "../ipc";
 import type { HistoryEntry } from "../types";
 
 export interface HistoryPageProps {
@@ -43,7 +43,7 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void refresh(query);
+      runCommand("Search history", refresh(query));
     }, 250);
     return () => window.clearTimeout(timer);
   }, [query, refresh]);
@@ -60,7 +60,7 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
       clearTimer.current = window.setTimeout(() => setConfirmingClear(false), 3000);
       return;
     }
-    void historyClear().then(() => setEntries([]));
+    runCommand("Clear history", historyClear().then(() => setEntries([])));
     setConfirmingClear(false);
     if (clearTimer.current !== null) window.clearTimeout(clearTimer.current);
   };
@@ -77,7 +77,7 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
 
   return (
     <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "80%" }}>
+      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
         <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
           <Heading level={2}>History</Heading>
           <HStack gap={2} align="center">
@@ -130,7 +130,7 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
                       icon={<Trash2 size={13} />}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void onDelete(entry.id);
+                        runCommand("Delete history entry", onDelete(entry.id));
                       }}
                     />
                   </HStack>

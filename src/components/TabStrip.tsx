@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
-import { Globe, Moon, Plus, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
+import { Copy, Globe, Moon, Plus, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Icon } from "@astryxdesign/core/Icon";
 import { Text } from "@astryxdesign/core/Text";
 import { ContextMenu } from "@astryxdesign/core/ContextMenu";
 import { HStack } from "@astryxdesign/core/HStack";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useListFocus } from "@astryxdesign/core/hooks";
 import type { TabId, TabInfo } from "../types";
 
@@ -20,6 +21,7 @@ export interface TabStripProps {
   onCloseToRight: (id: TabId) => void;
   onToggleMute: (id: TabId) => void;
   onDiscard: (id: TabId) => void;
+  onDuplicate: (id: TabId) => void;
 }
 
 /**
@@ -38,6 +40,7 @@ export default function TabStrip({
   onCloseToRight,
   onToggleMute,
   onDiscard,
+  onDuplicate,
 }: TabStripProps) {
   const { listRef, handleKeyDown, handleFocus } = useListFocus({
     itemSelector: '[role="tab"]',
@@ -64,7 +67,7 @@ export default function TabStrip({
             tab={tab}
             isActive={tab.id === activeId}
             isSolo={tabs.length === 1}
-            isLast={tabs.indexOf(tab) === tabs.length - 1}
+            isLast={tabs.at(-1)?.id === tab.id}
             onActivate={onActivate}
             onClose={onClose}
             onNewTab={onNewTab}
@@ -73,6 +76,7 @@ export default function TabStrip({
             onCloseToRight={onCloseToRight}
             onToggleMute={onToggleMute}
             onDiscard={onDiscard}
+            onDuplicate={onDuplicate}
           />
         ))}
       </HStack>
@@ -101,6 +105,7 @@ interface TabItemProps {
   onCloseToRight: (id: TabId) => void;
   onToggleMute: (id: TabId) => void;
   onDiscard: (id: TabId) => void;
+  onDuplicate: (id: TabId) => void;
 }
 
 function TabItem({
@@ -116,6 +121,7 @@ function TabItem({
   onCloseToRight,
   onToggleMute,
   onDiscard,
+  onDuplicate,
 }: TabItemProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -142,6 +148,7 @@ function TabItem({
         { label: "New Tab", icon: <Plus size={14} />, onClick: onNewTab },
         { type: "divider" },
         { label: "Reload", icon: <RefreshCw size={14} />, onClick: () => onReload(tab.id) },
+        { label: "Duplicate", icon: <Copy size={14} />, onClick: () => onDuplicate(tab.id) },
         {
           label: tab.muted ? "Unmute Tab" : "Mute Tab",
           isDisabled: !tab.audio && !tab.muted,
@@ -194,7 +201,9 @@ function TabItem({
         }}
       >
         {tab.loading ? (
-          <Spinner size="sm" aria-label="Loading" />
+          <Spinner size="sm" aria-label={`Loading ${tab.title}`} />
+        ) : tab.discarded ? (
+          <StatusDot variant="neutral" label={`${tab.title} is discarded`} tooltip="Discarded tab" />
         ) : tab.sleeping ? (
           <Icon icon={Moon} size="sm" color="inherit" />
         ) : tab.favicon_url ? (

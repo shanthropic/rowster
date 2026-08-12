@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Copy, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from "lucide-react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import TabStrip, { type TabStripProps } from "./TabStrip";
+import { runCommand } from "../ipc";
 
 /**
  * Row 1 of the chrome: window drag region, tab strip, new-tab button and
  * window controls. The window is frameless (decorations: false), so this
  * row is also the drag handle — empty areas carry `data-tauri-drag-region`.
  */
-export default function TitleBar(props: TabStripProps) {
+interface TitleBarProps extends TabStripProps {
+  isSidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}
+
+export default function TitleBar({
+  isSidebarOpen,
+  onToggleSidebar,
+  ...tabStripProps
+}: TitleBarProps) {
   return (
     <HStack
       gap={0}
@@ -19,7 +30,18 @@ export default function TitleBar(props: TabStripProps) {
       style={{ height: "var(--spacing-10)", minWidth: 0 }}
       data-tauri-drag-region
     >
-      <TabStrip {...props} />
+      <IconButton
+        size="sm"
+        variant="ghost"
+        label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+        icon={
+          isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />
+        }
+        onClick={onToggleSidebar}
+        tooltip={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
+      />
+      <Text type="label" className="browser-wordmark">ROWSTER</Text>
+      <TabStrip {...tabStripProps} />
       <WindowControls />
     </HStack>
   );
@@ -31,9 +53,9 @@ function WindowControls() {
     const window = getCurrentWindow();
     let alive = true;
     const sync = () =>
-      void window.isMaximized().then((max) => {
+      runCommand("Read window state", window.isMaximized().then((max) => {
         if (alive) setIsMaximized(max);
-      });
+      }));
     void sync();
     const unlisten = window.onResized(() => void sync());
     return () => {
@@ -49,7 +71,7 @@ function WindowControls() {
         variant="ghost"
         label="Minimize"
         icon={<Minus size={16} />}
-        onClick={() => void getCurrentWindow().minimize()}
+        onClick={() => runCommand("Minimize window", getCurrentWindow().minimize())}
         tooltip="Minimize"
       />
       <IconButton
@@ -57,7 +79,7 @@ function WindowControls() {
         variant="ghost"
         label={isMaximized ? "Restore" : "Maximize"}
         icon={isMaximized ? <Copy size={14} /> : <Square size={14} />}
-        onClick={() => void getCurrentWindow().toggleMaximize()}
+        onClick={() => runCommand("Toggle window size", getCurrentWindow().toggleMaximize())}
         tooltip={isMaximized ? "Restore" : "Maximize"}
       />
       <IconButton
@@ -65,7 +87,7 @@ function WindowControls() {
         variant="ghost"
         label="Close window"
         icon={<X size={16} />}
-        onClick={() => void getCurrentWindow().close()}
+        onClick={() => runCommand("Close window", getCurrentWindow().close())}
         tooltip="Close"
       />
     </HStack>

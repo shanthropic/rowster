@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { Button } from "@astryxdesign/core/Button";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { downloadsList, EV, onChromeEvent } from "../ipc";
+import { downloadsList, EV, onChromeEvent, runCommand } from "../ipc";
 
 export interface StatusBarProps {
   visible: boolean;
@@ -19,7 +19,7 @@ export default function StatusBar({ visible, onOpenDownloads }: StatusBarProps) 
       const downloads = await downloadsList();
       setActiveCount(downloads.filter((d) => d.status === "active").length);
     };
-    void refresh();
+    runCommand("Load download status", refresh());
     const events = [
       EV.DOWNLOAD_STARTED,
       EV.DOWNLOAD_COMPLETED,
@@ -27,7 +27,7 @@ export default function StatusBar({ visible, onOpenDownloads }: StatusBarProps) 
       EV.DOWNLOAD_CANCELLED,
     ];
     const unlisteners = events.map((event) =>
-      onChromeEvent<unknown>(event, () => void refresh())
+      onChromeEvent<unknown>(event, () => runCommand("Refresh download status", refresh()))
     );
     return () => {
       for (const unlisten of unlisteners) void unlisten.then((fn) => fn());

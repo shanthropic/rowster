@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Globe, Lock, Star } from "lucide-react";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { useEffect, useId, useRef, useState } from "react";
+import { ArrowRight, Globe2, LockKeyhole, Search, Star } from "lucide-react";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { InputGroup } from "@astryxdesign/core/InputGroup";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { bookmarkStatus, bookmarkToggle, onChromeEvent, EV } from "../ipc";
+import { HStack } from "@astryxdesign/core/HStack";
+import { bookmarkStatus, bookmarkToggle, EV, onChromeEvent, runCommand } from "../ipc";
 import type { TabInfo } from "../types";
 import { normalizeAddress, prettyUrl } from "../nav";
 
@@ -13,55 +11,54 @@ export interface AddressBarProps {
   onNavigate: (address: string) => void;
 }
 
-/** The address bar: scheme icon, editable URL, bookmark star, go/stop. */
 export default function AddressBar({ tab, onNavigate }: AddressBarProps) {
+  const id = useId();
   const [draft, setDraft] = useState(() => prettyUrl(tab?.url ?? ""));
   const [bookmarked, setBookmarked] = useState(false);
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!tab) return;
-    // Follow engine-driven URL changes only while the user is not editing.
-    if (document.activeElement === inputRef.current) return;
-    setDraft(prettyUrl(tab.url));
-  }, [tab?.id, tab?.url]);
+    if (!focused) setDraft(prettyUrl(tab?.url ?? ""));
+  }, [focused, tab?.id, tab?.url]);
 
   const url = tab?.url ?? "";
-  const canBookmark = url.startsWith("http://") || url.startsWith("https://");
+  const canBookmark = /^https?:\/\//.test(url);
 
-  // Refresh the star when the page or the bookmark set changes.
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
     if (!canBookmark) {
       setBookmarked(false);
       return;
     }
-    void bookmarkStatus(url).then((status) => {
-      if (!cancelled) setBookmarked(status);
-    });
+    runCommand(
+      "Check bookmark",
+      bookmarkStatus(url).then((status) => {
+        if (alive) setBookmarked(status);
+      })
+    );
     return () => {
-      cancelled = true;
+      alive = false;
     };
-  }, [url, canBookmark]);
+  }, [canBookmark, url]);
 
   useEffect(() => {
     const unlisten = onChromeEvent<unknown>(EV.BOOKMARKS_CHANGED, () => {
       if (!canBookmark) return;
-      void bookmarkStatus(url).then(setBookmarked);
+      runCommand("Refresh bookmark", bookmarkStatus(url).then(setBookmarked));
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [url, canBookmark]);
+  }, [canBookmark, url]);
 
-  // Ctrl+L from the app-level shortcut dispatches this event.
   useEffect(() => {
-    const onFocusAddress = () => {
+    const focusAddress = () => {
       inputRef.current?.focus();
       inputRef.current?.select();
     };
-    window.addEventListener("rowster:focus-address", onFocusAddress);
-    return () => window.removeEventListener("rowster:focus-address", onFocusAddress);
+    window.addEventListener("rowster:focus-address", focusAddress);
+    return () => window.removeEventListener("rowster:focus-address", focusAddress);
   }, []);
 
   const submit = () => {
@@ -74,70 +71,70 @@ export default function AddressBar({ tab, onNavigate }: AddressBarProps) {
   const toggleBookmark = () => {
     if (!canBookmark) return;
     const title = tab?.title && tab.title !== "New Tab" ? tab.title : url;
-    void bookmarkToggle(url, title).then((bookmark) => {
-      setBookmarked(bookmark !== null);
-    });
+    runCommand(
+      "Update bookmark",
+      bookmarkToggle(url, title).then((bookmark) => setBookmarked(bookmark !== null))
+    );
   };
 
   const isSecure = url.startsWith("https://");
-  const showSpinner = tab?.loading ?? false;
+  const icon = focused || !url ? <Search size={16} /> : isSecure ? <LockKeyhole size={15} /> : <Globe2 size={15} />;
 
   return (
-    <InputGroup
-      label="Address"
-      isLabelHidden
-      size="md"
-      style={{ width: "100%" }}
-    >
-      <TextInput
+    <label className="browser-address" data-focused={focused} htmlFor={id}>
+      <HStack className="browser-address-icon" aria-hidden="true">{icon}</HStack>
+      <input
         ref={inputRef}
-        label="Address"
-        isLabelHidden
+        id={id}
+        className="browser-address-input"
         value={draft}
-        placeholder="Search or enter address"
-        onChange={setDraft}
-        onEnter={submit}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
+        aria-label="Search or enter address"
+        autoCapitalize="off"
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Search the web or enter an address"
+        onChange={(event) => setDraft(event.target.value)}
+        onFocus={(event) => {
+          setFocused(true);
+          event.currentTarget.select();
+        }}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submit();
+          } else if (event.key === "Escape") {
             setDraft(prettyUrl(tab?.url ?? ""));
-            inputRef.current?.blur();
+            event.currentTarget.blur();
           }
         }}
-        onFocus={(e) => (e.target as HTMLInputElement).select()}
-        startIcon={<IconSchemeIcon isSecure={isSecure && !!tab?.url} />}
-        style={{ minWidth: 0 }}
       />
       {canBookmark ? (
-        <IconButton
-          size="sm"
-          variant="ghost"
-          label={bookmarked ? "Remove bookmark" : "Bookmark this page"}
-          icon={
-            <Star
-              size={15}
-              fill={bookmarked ? "currentColor" : "none"}
-            />
-          }
+        <button
+          type="button"
+          className="browser-address-action"
+          aria-label={bookmarked ? "Remove bookmark" : "Bookmark this page"}
+          title={bookmarked ? "Remove bookmark" : "Bookmark this page"}
+          onMouseDown={(event) => event.preventDefault()}
           onClick={toggleBookmark}
-          tooltip={bookmarked ? "Remove bookmark (Ctrl+Shift+D)" : "Bookmark this page (Ctrl+Shift+D)"}
-        />
+        >
+          <Star size={15} fill={bookmarked ? "currentColor" : "none"} />
+        </button>
       ) : null}
-      {showSpinner ? (
-        <Spinner size="sm" aria-label="Loading" />
-      ) : (
-        <IconButton
-          size="sm"
-          variant="ghost"
-          label="Navigate"
-          icon={<ArrowRight size={16} />}
+      {tab?.loading ? (
+        <HStack className="browser-address-progress"><Spinner size="sm" aria-label="Loading page" /></HStack>
+      ) : draft.trim() && focused ? (
+        <button
+          type="button"
+          className="browser-address-action"
+          aria-label="Navigate"
+          title="Navigate"
+          onMouseDown={(event) => event.preventDefault()}
           onClick={submit}
-          tooltip="Navigate to address"
-        />
-      )}
-    </InputGroup>
+        >
+          <ArrowRight size={16} />
+        </button>
+      ) : null}
+    </label>
   );
-}
-
-function IconSchemeIcon({ isSecure }: { isSecure: boolean }) {
-  return isSecure ? <Lock size={14} /> : <Globe size={14} />;
 }

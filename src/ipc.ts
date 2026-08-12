@@ -18,6 +18,19 @@ import type {
   TabInfo,
 } from "./types";
 
+const reportError = (command: string, error: unknown) => {
+  window.dispatchEvent(
+    new CustomEvent("rowster:command-error", {
+      detail: `${command}: ${String(error)}`,
+    })
+  );
+};
+
+/** Runs an IPC action and reports failures through the chrome error surface. */
+export const runCommand = <T,>(command: string, task: Promise<T>) => {
+  void task.catch((error: unknown) => reportError(command, error));
+};
+
 /** Event names, mirrored from src-tauri/src/events.rs. */
 export const EV = {
   TABS_SNAPSHOT: "tabs_snapshot",
@@ -72,6 +85,9 @@ export const startupInfo = () => invoke<BrowserSnapshot>("startup_info");
 export const tabCreate = () => invoke<TabInfo>("tab_create");
 export const tabActivate = (id: TabId) => invoke<void>("tab_activate", { id });
 export const tabClose = (id: TabId) => invoke<void>("tab_close", { id });
+export const tabCloseOthers = (id: TabId) => invoke<void>("tab_close_others", { id });
+export const tabCloseRight = (id: TabId) => invoke<void>("tab_close_right", { id });
+export const tabDuplicate = (id: TabId) => invoke<TabInfo>("tab_duplicate", { id });
 
 export const navigate = (id: TabId, address: string) =>
   invoke<void>("navigate", { id, address });
@@ -93,6 +109,9 @@ export const chromeLayoutChanged = (layout: {
   left: number;
   right: number;
 }) => invoke<ChromeLayout>("chrome_layout_changed", layout);
+
+export const chromeOverlayChanged = (open: boolean) =>
+  invoke<void>("chrome_overlay_changed", { open });
 
 export const settingsGet = () => invoke<Settings>("settings_get");
 export const settingsSet = (patch: SettingsPatch) =>
@@ -154,19 +173,6 @@ export const findClose = (id: TabId) => invoke<void>("find_close", { id });
 export const tabMute = (id: TabId, muted: boolean) => invoke<void>("tab_mute", { id, muted });
 
 export const tabDiscard = (id: TabId) => invoke<void>("tab_discard", { id });
-
-export const tabSetVisible = (id: TabId, visible: boolean) =>
-  invoke<void>("tab_set_visible", { id, visible });
-
-/** Diagnostics for the custom titlebar/layout (layout_diag command). */
-export type LayoutDiagArgs = {
-  chromeTop: number;
-  chromeBottom: number;
-  scrollY: number;
-  innerHeight: number;
-  docScrollHeight: number;
-}
-export const layoutDiag = (args: LayoutDiagArgs) => invoke<void>("layout_diag", args);
 
 /** Subscribes to a chrome event; returns an unlisten function. */
 export const onChromeEvent = <T,>(event: string, handler: (payload: T) => void) =>
