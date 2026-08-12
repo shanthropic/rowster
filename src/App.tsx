@@ -46,6 +46,7 @@ import {
   tabCloseOthers,
   tabCloseRight,
   tabCreate,
+  tabReorder,
   zoomIn,
   zoomOut,
   zoomReset,
@@ -357,6 +358,9 @@ export default function App() {
               }}
               onDiscard={(id) => runCommand("Discard tab", tabDiscard(id))}
               onDuplicate={(id) => runCommand("Duplicate tab", tabDuplicate(id))}
+              onReorder={(id, beforeId) =>
+                runCommand("Reorder tab", tabReorder(id, beforeId))
+              }
             />
             <NavigationBar
               tab={activeTab}

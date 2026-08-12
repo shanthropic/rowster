@@ -36,6 +36,7 @@ pub fn run() {
             commands::tab_close_others,
             commands::tab_close_right,
             commands::tab_duplicate,
+            commands::tab_reorder,
             commands::navigate,
             commands::go_back,
             commands::go_forward,

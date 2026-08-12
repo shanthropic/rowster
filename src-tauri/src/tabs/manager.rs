@@ -797,6 +797,46 @@ impl TabManager {
         Ok(neighbor)
     }
 
+    /// Moves `id` immediately before `before_id` (or to the end when `None`).
+    /// The display order is what the session file persists, so a reorder
+    /// survives restarts without extra bookkeeping.
+    fn reorder_to(&self, id: TabId, before_id: Option<TabId>) -> Result<()> {
+        if Some(id) == before_id {
+            return Ok(());
+        }
+        let mut order = lock(&self.inner.order)?;
+        let position = order
+            .iter()
+            .position(|tab_id| *tab_id == id)
+            .ok_or_else(|| Error::TabNotFound(id.to_string()))?;
+        // Resolve the insertion index against the untouched order so an
+        // unknown target leaves the order exactly as it was.
+        let insert_at = match before_id {
+            Some(before) => {
+                let target = order
+                    .iter()
+                    .position(|tab_id| *tab_id == before)
+                    .ok_or_else(|| Error::TabNotFound(before.to_string()))?;
+                // Removing `id` shifts a target that sat to its right left.
+                if target > position {
+                    target - 1
+                } else {
+                    target
+                }
+            }
+            None => order.len() - 1,
+        };
+        order.remove(position);
+        order.insert(insert_at, id);
+        Ok(())
+    }
+
+    /// Reorders a tab and publishes the updated snapshot to chrome.
+    pub fn reorder(&self, app: &AppHandle, id: TabId, before_id: Option<TabId>) -> Result<()> {
+        self.reorder_to(id, before_id)?;
+        self.emit_snapshot(app)
+    }
+
     // ------------------------------------------------------------------
     // Navigation
     // ------------------------------------------------------------------
@@ -1220,6 +1260,41 @@ mod tests {
         *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
         assert_eq!(manager.remove_from_order(2).unwrap(), Some(3));
         assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 3]);
+    }
+
+    #[test]
+    fn reorder_moves_tab_before_its_target() {
+        let manager = TabManager::new();
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3, 4];
+        manager.reorder_to(4, Some(2)).unwrap();
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 4, 2, 3]);
+        manager.reorder_to(1, Some(4)).unwrap();
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 4, 2, 3]);
+    }
+
+    #[test]
+    fn reorder_to_end_appends_when_no_target() {
+        let manager = TabManager::new();
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
+        manager.reorder_to(1, None).unwrap();
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![2, 3, 1]);
+    }
+
+    #[test]
+    fn reorder_onto_itself_is_a_noop() {
+        let manager = TabManager::new();
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
+        manager.reorder_to(2, Some(2)).unwrap();
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn reorder_rejects_unknown_tabs() {
+        let manager = TabManager::new();
+        *manager.inner.order.lock().unwrap() = vec![1, 2, 3];
+        assert!(manager.reorder_to(99, Some(1)).is_err());
+        assert!(manager.reorder_to(1, Some(99)).is_err());
+        assert_eq!(*manager.inner.order.lock().unwrap(), vec![1, 2, 3]);
     }
 
     #[test]

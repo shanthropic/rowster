@@ -88,6 +88,8 @@ export const tabClose = (id: TabId) => invoke<void>("tab_close", { id });
 export const tabCloseOthers = (id: TabId) => invoke<void>("tab_close_others", { id });
 export const tabCloseRight = (id: TabId) => invoke<void>("tab_close_right", { id });
 export const tabDuplicate = (id: TabId) => invoke<TabInfo>("tab_duplicate", { id });
+export const tabReorder = (id: TabId, beforeId: TabId | null) =>
+  invoke<void>("tab_reorder", { id, beforeId });
 
 export const navigate = (id: TabId, address: string) =>
   invoke<void>("navigate", { id, address });

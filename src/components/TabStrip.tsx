@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Globe, Moon, Plus, RefreshCw, Volume2, VolumeX, X } from "lucide-react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -22,7 +22,11 @@ export interface TabStripProps {
   onToggleMute: (id: TabId) => void;
   onDiscard: (id: TabId) => void;
   onDuplicate: (id: TabId) => void;
+  onReorder: (id: TabId, beforeId: TabId | null) => void;
 }
+
+/** Pointer movement before a pointerdown becomes a drag (CSS pixels). */
+const DRAG_THRESHOLD = 5;
 
 /**
  * The tab strip: one role="tab" per tab with a roving tabstop, a per-tab
@@ -41,6 +45,7 @@ export default function TabStrip({
   onToggleMute,
   onDiscard,
   onDuplicate,
+  onReorder,
 }: TabStripProps) {
   const { listRef, handleKeyDown, handleFocus } = useListFocus({
     itemSelector: '[role="tab"]',
@@ -48,6 +53,65 @@ export default function TabStrip({
     hasRovingTabIndex: true,
     hasHomeEnd: true,
   });
+
+  const [dragCandidate, setDragCandidate] = useState<{ id: TabId; startX: number } | null>(null);
+  const [draggingId, setDraggingId] = useState<TabId | null>(null);
+  const [dropBeforeId, setDropBeforeId] = useState<TabId | null>(null);
+  const [suppressedClick, setSuppressedClick] = useState<TabId | null>(null);
+  const dropBeforeRef = useRef<TabId | null>(null);
+
+  const startDrag = useCallback((id: TabId, clientX: number) => {
+    setDragCandidate({ id, startX: clientX });
+  }, []);
+
+  useEffect(() => {
+    if (!dragCandidate) return;
+    const onMove = (e: PointerEvent) => {
+      if (Math.abs(e.clientX - dragCandidate.startX) < DRAG_THRESHOLD) return;
+      const dragging = dragCandidate.id;
+      if (draggingId !== dragging) {
+        setDraggingId(dragging);
+        dropBeforeRef.current = null;
+      }
+      const container = listRef.current;
+      if (!container) return;
+      const tabEls = Array.from(
+        container.querySelectorAll<HTMLElement>('[role="tab"]')
+      );
+      let before: TabId | null = null;
+      for (let i = 0; i < tabEls.length; i++) {
+        if (tabs[i].id === dragging) continue;
+        const rect = tabEls[i].getBoundingClientRect();
+        if (e.clientX <= rect.left + rect.width / 2) {
+          before = tabs[i].id;
+          break;
+        }
+      }
+      dropBeforeRef.current = before;
+      setDropBeforeId(before);
+    };
+    const onUp = () => {
+      if (draggingId !== null) {
+        onReorder(dragCandidate.id, dropBeforeRef.current);
+        setSuppressedClick(dragCandidate.id);
+      }
+      clearDrag();
+    };
+    const clearDrag = () => {
+      setDragCandidate(null);
+      setDraggingId(null);
+      setDropBeforeId(null);
+      dropBeforeRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", clearDrag);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", clearDrag);
+    };
+  }, [dragCandidate, draggingId, listRef, onReorder, tabs]);
 
   return (
     <HStack gap={0} align="center" style={{ minWidth: 0, flex: 1, height: "100%" }}>
@@ -57,7 +121,14 @@ export default function TabStrip({
         aria-label="Tabs"
         gap={0}
         align="center"
-        style={{ minWidth: 0, flex: 1, height: "100%", overflow: "hidden" }}
+        style={{
+          minWidth: 0,
+          flex: 1,
+          height: "100%",
+          overflow: "hidden",
+          touchAction: draggingId ? "none" : "auto",
+          userSelect: draggingId ? "none" : "auto",
+        }}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
       >
@@ -68,6 +139,15 @@ export default function TabStrip({
             isActive={tab.id === activeId}
             isSolo={tabs.length === 1}
             isLast={tabs.at(-1)?.id === tab.id}
+            isDragging={tab.id === draggingId}
+            isDropTarget={
+              tab.id === dropBeforeId ||
+              (dropBeforeId === null &&
+                draggingId !== null &&
+                draggingId !== tab.id &&
+                tab.id === tabs.at(-1)?.id)
+            }
+            suppressedClickId={suppressedClick}
             onActivate={onActivate}
             onClose={onClose}
             onNewTab={onNewTab}
@@ -77,6 +157,8 @@ export default function TabStrip({
             onToggleMute={onToggleMute}
             onDiscard={onDiscard}
             onDuplicate={onDuplicate}
+            onDragStart={startDrag}
+            onConsumeSuppressedClick={() => setSuppressedClick(null)}
           />
         ))}
       </HStack>
@@ -97,6 +179,9 @@ interface TabItemProps {
   isActive: boolean;
   isSolo: boolean;
   isLast: boolean;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  suppressedClickId: TabId | null;
   onActivate: (id: TabId) => void;
   onClose: (id: TabId) => void;
   onNewTab: () => void;
@@ -106,6 +191,8 @@ interface TabItemProps {
   onToggleMute: (id: TabId) => void;
   onDiscard: (id: TabId) => void;
   onDuplicate: (id: TabId) => void;
+  onDragStart: (id: TabId, clientX: number) => void;
+  onConsumeSuppressedClick: () => void;
 }
 
 function TabItem({
@@ -113,6 +200,9 @@ function TabItem({
   isActive,
   isSolo,
   isLast,
+  isDragging,
+  isDropTarget,
+  suppressedClickId,
   onActivate,
   onClose,
   onNewTab,
@@ -122,6 +212,8 @@ function TabItem({
   onToggleMute,
   onDiscard,
   onDuplicate,
+  onDragStart,
+  onConsumeSuppressedClick,
 }: TabItemProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -180,6 +272,7 @@ function TabItem({
         role="tab"
         id={`rowster-tab-${tab.id}`}
         aria-selected={isActive}
+        aria-grabbed={isDragging}
         tabIndex={-1}
         gap={1}
         align="center"
@@ -187,7 +280,18 @@ function TabItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         onKeyDown={onKeyDown}
-        onClick={() => onActivate(tab.id)}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          if ((e.target as HTMLElement).closest("button")) return;
+          onDragStart(tab.id, e.clientX);
+        }}
+        onClick={() => {
+          if (suppressedClickId === tab.id) {
+            onConsumeSuppressedClick();
+            return;
+          }
+          onActivate(tab.id);
+        }}
         style={{
           height: "var(--spacing-8)",
           flex: "0 1 30%",
@@ -198,6 +302,11 @@ function TabItem({
           color: isActive
             ? "var(--color-text-primary)"
             : "var(--color-text-secondary)",
+          opacity: isDragging ? 0.5 : 1,
+          boxShadow: isDropTarget
+            ? "inset 2px 0 0 var(--color-accent-base)"
+            : "inset 0 0 0 transparent",
+          transition: "box-shadow var(--duration-fast) var(--ease-standard)",
         }}
       >
         {tab.loading ? (

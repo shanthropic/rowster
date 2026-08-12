@@ -130,6 +130,17 @@ pub async fn tab_duplicate(app: AppHandle, webview: Webview, id: u64) -> Result<
 }
 
 #[tauri::command]
+pub async fn tab_reorder(
+    app: AppHandle,
+    webview: Webview,
+    id: u64,
+    before_id: Option<u64>,
+) -> Result<()> {
+    caller::assert_chrome(&webview)?;
+    manager(&app).reorder(&app, id, before_id)
+}
+
+#[tauri::command]
 pub async fn navigate(app: AppHandle, webview: Webview, id: u64, address: String) -> Result<()> {
     caller::assert_chrome(&webview)?;
     manager(&app).navigate(&app, id, &address)
