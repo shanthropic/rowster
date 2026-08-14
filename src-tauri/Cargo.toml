@@ -36,7 +36,7 @@ webkit2gtk = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.38"
-windows-core = "0.61"
+windows-core = "0.62"
 
 [build-dependencies]
 tauri-build = "2"

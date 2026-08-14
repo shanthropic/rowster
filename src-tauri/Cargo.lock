@@ -3415,7 +3415,7 @@ dependencies = [
  "uuid",
  "webkit2gtk",
  "webview2-com",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
