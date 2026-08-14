@@ -235,9 +235,8 @@ fn handle_webview2_permission(
 
 #[cfg(target_os = "linux")]
 fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Result<()> {
-    use webkit2gtk::glib::object::Cast;
-    use webkit2gtk::traits::{PermissionRequestExt, UserMediaPermissionRequestExt, WebViewExt};
-
+    use webkit2gtk::glib::Cast;
+    use webkit2gtk::{PermissionRequestExt, UserMediaPermissionRequestExt, WebViewExt};
     let state = app.state::<AppState>();
     let tabs = state.tabs.clone();
     let db = state.db.clone();
