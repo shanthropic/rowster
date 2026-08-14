@@ -6,6 +6,7 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { Text } from "@astryxdesign/core/Text";
 import { ContextMenu } from "@astryxdesign/core/ContextMenu";
 import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useListFocus } from "@astryxdesign/core/hooks";
 import type { TabId, TabInfo } from "../types";
@@ -13,6 +14,8 @@ import type { TabId, TabInfo } from "../types";
 export interface TabStripProps {
   tabs: TabInfo[];
   activeId: TabId | null;
+  orientation?: "horizontal" | "vertical";
+  showNewTabButton?: boolean;
   onActivate: (id: TabId) => void;
   onClose: (id: TabId) => void;
   onNewTab: () => void;
@@ -31,11 +34,13 @@ const DRAG_THRESHOLD = 5;
 /**
  * The tab strip: one role="tab" per tab with a roving tabstop, a per-tab
  * context menu with tab management actions, and a new-tab button.
- * (TabList is for content sections, not browser tabs.)
+ * Supports both horizontal (top chrome) and vertical (left sidebar) orientations.
  */
 export default function TabStrip({
   tabs,
   activeId,
+  orientation = "horizontal",
+  showNewTabButton = true,
   onActivate,
   onClose,
   onNewTab,
@@ -47,27 +52,29 @@ export default function TabStrip({
   onDuplicate,
   onReorder,
 }: TabStripProps) {
+  const isVertical = orientation === "vertical";
   const { listRef, handleKeyDown, handleFocus } = useListFocus({
     itemSelector: '[role="tab"]',
-    orientation: "horizontal",
+    orientation,
     hasRovingTabIndex: true,
     hasHomeEnd: true,
   });
 
-  const [dragCandidate, setDragCandidate] = useState<{ id: TabId; startX: number } | null>(null);
+  const [dragCandidate, setDragCandidate] = useState<{ id: TabId; startPos: number } | null>(null);
   const [draggingId, setDraggingId] = useState<TabId | null>(null);
   const [dropBeforeId, setDropBeforeId] = useState<TabId | null>(null);
   const [suppressedClick, setSuppressedClick] = useState<TabId | null>(null);
   const dropBeforeRef = useRef<TabId | null>(null);
 
-  const startDrag = useCallback((id: TabId, clientX: number) => {
-    setDragCandidate({ id, startX: clientX });
+  const startDrag = useCallback((id: TabId, clientPos: number) => {
+    setDragCandidate({ id, startPos: clientPos });
   }, []);
 
   useEffect(() => {
     if (!dragCandidate) return;
     const onMove = (e: PointerEvent) => {
-      if (Math.abs(e.clientX - dragCandidate.startX) < DRAG_THRESHOLD) return;
+      const currentPos = isVertical ? e.clientY : e.clientX;
+      if (Math.abs(currentPos - dragCandidate.startPos) < DRAG_THRESHOLD) return;
       const dragging = dragCandidate.id;
       if (draggingId !== dragging) {
         setDraggingId(dragging);
@@ -82,7 +89,8 @@ export default function TabStrip({
       for (let i = 0; i < tabEls.length; i++) {
         if (tabs[i].id === dragging) continue;
         const rect = tabEls[i].getBoundingClientRect();
-        if (e.clientX <= rect.left + rect.width / 2) {
+        const midpoint = isVertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+        if (currentPos <= midpoint) {
           before = tabs[i].id;
           break;
         }
@@ -111,7 +119,116 @@ export default function TabStrip({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", clearDrag);
     };
-  }, [dragCandidate, draggingId, listRef, onReorder, tabs]);
+  }, [dragCandidate, draggingId, isVertical, listRef, onReorder, tabs]);
+
+  if (isVertical) {
+    return (
+      <VStack
+        gap={1}
+        style={{
+          width: "100%",
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+        }}
+      >
+        <VStack
+          ref={listRef as React.RefObject<HTMLDivElement>}
+          role="tablist"
+          aria-label="Sidebar Tabs"
+          aria-orientation="vertical"
+          gap={1}
+          style={{
+            width: "100%",
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            touchAction: draggingId ? "none" : "auto",
+            userSelect: draggingId ? "none" : "auto",
+            paddingInline: "var(--spacing-2)",
+            paddingBlock: "var(--spacing-1)",
+          }}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+        >
+          {tabs.map((tab) => (
+            <TabItem
+              key={tab.id}
+              tab={tab}
+              isVertical={true}
+              isActive={tab.id === activeId}
+              isSolo={tabs.length === 1}
+              isLast={tabs.at(-1)?.id === tab.id}
+              isDragging={tab.id === draggingId}
+              isDropTarget={
+                tab.id === dropBeforeId ||
+                (dropBeforeId === null &&
+                  draggingId !== null &&
+                  draggingId !== tab.id &&
+                  tab.id === tabs.at(-1)?.id)
+              }
+              suppressedClickId={suppressedClick}
+              onActivate={onActivate}
+              onClose={onClose}
+              onNewTab={onNewTab}
+              onReload={onReload}
+              onCloseOthers={onCloseOthers}
+              onCloseToRight={onCloseToRight}
+              onToggleMute={onToggleMute}
+              onDiscard={onDiscard}
+              onDuplicate={onDuplicate}
+              onDragStart={startDrag}
+              onConsumeSuppressedClick={() => setSuppressedClick(null)}
+            />
+          ))}
+          {/* New tab button row in the same tab column */}
+          <HStack
+            role="button"
+            tabIndex={0}
+            gap={2}
+            align="center"
+            paddingInline={2}
+            onClick={onNewTab}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onNewTab();
+              }
+            }}
+            style={{
+              height: "var(--spacing-9)",
+              width: "100%",
+              flex: "none",
+              boxSizing: "border-box",
+              cursor: "pointer",
+              borderRadius: "var(--radius-md)",
+              background: "transparent",
+              color: "var(--color-text-secondary)",
+              border: "var(--border-width) dashed var(--color-border-subtle)",
+              transition:
+                "background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard)",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "var(--color-overlay-hover)";
+              (e.currentTarget as HTMLElement).style.color = "var(--color-text-primary)";
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.background = "transparent";
+              (e.currentTarget as HTMLElement).style.color = "var(--color-text-secondary)";
+              (e.currentTarget as HTMLElement).style.borderColor = "var(--color-border-subtle)";
+            }}
+          >
+            <Plus size={16} style={{ flex: "none" }} />
+            <Text type="label" style={{ minWidth: 0, flex: 1, textAlign: "left", color: "inherit" }}>
+              New tab
+            </Text>
+          </HStack>
+        </VStack>
+      </VStack>
+    );
+  }
 
   return (
     <HStack
@@ -124,6 +241,7 @@ export default function TabStrip({
         ref={listRef as React.RefObject<HTMLDivElement>}
         role="tablist"
         aria-label="Tabs"
+        aria-orientation="horizontal"
         gap={0}
         align="center"
         style={{
@@ -141,6 +259,7 @@ export default function TabStrip({
           <TabItem
             key={tab.id}
             tab={tab}
+            isVertical={false}
             isActive={tab.id === activeId}
             isSolo={tabs.length === 1}
             isLast={tabs.at(-1)?.id === tab.id}
@@ -167,21 +286,24 @@ export default function TabStrip({
           />
         ))}
       </HStack>
-      <IconButton
-        size="sm"
-        variant="ghost"
-        label="New tab"
-        icon={<Plus size={16} />}
-        onClick={onNewTab}
-        tooltip="New tab (Ctrl+T)"
-        style={{ flex: "none", marginInlineStart: "var(--spacing-1)" }}
-      />
+      {showNewTabButton && (
+        <IconButton
+          size="sm"
+          variant="ghost"
+          label="New tab"
+          icon={<Plus size={16} />}
+          onClick={onNewTab}
+          tooltip="New tab (Ctrl+T)"
+          style={{ flex: "none", marginInlineStart: "var(--spacing-1)" }}
+        />
+      )}
     </HStack>
   );
 }
 
 interface TabItemProps {
   tab: TabInfo;
+  isVertical: boolean;
   isActive: boolean;
   isSolo: boolean;
   isLast: boolean;
@@ -197,12 +319,13 @@ interface TabItemProps {
   onToggleMute: (id: TabId) => void;
   onDiscard: (id: TabId) => void;
   onDuplicate: (id: TabId) => void;
-  onDragStart: (id: TabId, clientX: number) => void;
+  onDragStart: (id: TabId, clientPos: number) => void;
   onConsumeSuppressedClick: () => void;
 }
 
 function TabItem({
   tab,
+  isVertical,
   isActive,
   isSolo,
   isLast,
@@ -268,7 +391,7 @@ function TabItem({
           onClick: () => onCloseOthers(tab.id),
         },
         {
-          label: "Close Tabs to the Right",
+          label: isVertical ? "Close Tabs Below" : "Close Tabs to the Right",
           isDisabled: isLast,
           onClick: () => onCloseToRight(tab.id),
         },
@@ -280,7 +403,7 @@ function TabItem({
         aria-selected={isActive}
         aria-grabbed={isDragging}
         tabIndex={-1}
-        gap={1}
+        gap={2}
         align="center"
         paddingInline={2}
         onMouseEnter={() => setIsHovered(true)}
@@ -289,7 +412,7 @@ function TabItem({
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           if ((e.target as HTMLElement).closest("button")) return;
-          onDragStart(tab.id, e.clientX);
+          onDragStart(tab.id, isVertical ? e.clientY : e.clientX);
         }}
         onClick={() => {
           if (suppressedClickId === tab.id) {
@@ -299,21 +422,32 @@ function TabItem({
           onActivate(tab.id);
         }}
         style={{
-          height: "var(--spacing-8)",
-          flex: "1 1 auto",
-          maxWidth: 220,
-          minWidth: 48,
+          height: isVertical ? "var(--spacing-9)" : "var(--spacing-8)",
+          width: isVertical ? "100%" : "auto",
+          maxWidth: isVertical ? "none" : 220,
+          minWidth: isVertical ? "100%" : 48,
+          flex: isVertical ? "none" : "1 1 auto",
+          boxSizing: "border-box",
           cursor: "pointer",
           borderRadius: "var(--radius-md)",
-          background: isActive ? "var(--color-background-surface)" : "transparent",
+          background: isActive
+            ? "var(--color-background-surface)"
+            : isHovered
+              ? "var(--color-overlay-hover)"
+              : "transparent",
           color: isActive
             ? "var(--color-text-primary)"
             : "var(--color-text-secondary)",
           opacity: isDragging ? 0.5 : 1,
           boxShadow: isDropTarget
-            ? "inset 2px 0 0 var(--color-accent-base)"
+            ? isVertical
+              ? "inset 0 2px 0 var(--color-accent-base), inset 0 -2px 0 transparent"
+              : "inset 2px 0 0 var(--color-accent-base)"
             : "inset 0 0 0 transparent",
-          transition: "box-shadow var(--duration-fast) var(--ease-standard)",
+          border: isActive
+            ? "var(--border-width) solid var(--color-border)"
+            : "var(--border-width) solid transparent",
+          transition: "box-shadow var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard)",
         }}
       >
         {tab.loading ? (
@@ -333,7 +467,7 @@ function TabItem({
         ) : (
           <Icon icon={Globe} size="sm" color="inherit" />
         )}
-        <Text type="label" maxLines={1} style={{ minWidth: 0, flex: 1 }}>
+        <Text type="label" maxLines={1} style={{ minWidth: 0, flex: 1, textAlign: "left" }}>
           {tab.title}
         </Text>
         {(tab.audio || tab.muted) && (

@@ -14,6 +14,14 @@ pub enum Theme {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum TabLayout {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum NewTabBehavior {
     #[default]
     NewTabPage,
@@ -54,6 +62,8 @@ pub struct Settings {
     pub download_dir: Option<String>,
     #[serde(default)]
     pub theme: Theme,
+    #[serde(default)]
+    pub tab_layout: TabLayout,
     #[serde(default = "default_zoom")]
     pub zoom_default: f64,
     #[serde(default)]
@@ -99,6 +109,7 @@ impl Default for Settings {
             ask_before_download: true,
             download_dir: None,
             theme: Theme::System,
+            tab_layout: TabLayout::Horizontal,
             zoom_default: default_zoom(),
             close_last_tab_action: CloseLastTabAction::NewTab,
             history_retention_days: default_retention_days(),
@@ -141,6 +152,7 @@ pub struct SettingsPatch {
     pub ask_before_download: Option<bool>,
     pub download_dir: Option<String>,
     pub theme: Option<Theme>,
+    pub tab_layout: Option<TabLayout>,
     pub zoom_default: Option<f64>,
     pub close_last_tab_action: Option<CloseLastTabAction>,
     pub history_retention_days: Option<u32>,
@@ -180,6 +192,9 @@ impl Settings {
         }
         if let Some(value) = patch.theme {
             self.theme = value;
+        }
+        if let Some(value) = patch.tab_layout {
+            self.tab_layout = value;
         }
         if let Some(value) = patch.zoom_default {
             validate_zoom(value)?;
@@ -368,11 +383,13 @@ mod tests {
         settings
             .apply(SettingsPatch {
                 theme: Some(Theme::Dark),
+                tab_layout: Some(TabLayout::Vertical),
                 zoom_default: Some(1.25),
                 ..Default::default()
             })
             .unwrap();
         assert_eq!(settings.theme, Theme::Dark);
+        assert_eq!(settings.tab_layout, TabLayout::Vertical);
         assert_eq!(settings.zoom_default, 1.25);
         assert!(settings.restore_session);
     }

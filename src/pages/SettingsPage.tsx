@@ -15,7 +15,7 @@ import { Switch } from "@astryxdesign/core/Switch";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Banner } from "@astryxdesign/core/Banner";
 import { clearBrowsingData, permissionsList, permissionReset, permissionResetAll, settingsGet, settingsSet } from "../ipc";
-import type { PermissionKind, Settings, SettingsPatch, SitePermission, ThemeMode } from "../types";
+import type { PermissionKind, Settings, SettingsPatch, SitePermission, TabLayout, ThemeMode } from "../types";
 
 export interface SettingsPageProps {
   onClose: () => void;
@@ -33,6 +33,11 @@ const THEME_OPTIONS = [
   { label: "System", value: "system" },
   { label: "Light", value: "light" },
   { label: "Dark", value: "dark" },
+];
+
+const TAB_LAYOUT_OPTIONS = [
+  { label: "Top (Horizontal)", value: "horizontal" },
+  { label: "Sidebar (Vertical)", value: "vertical" },
 ];
 
 export default function SettingsPage({ onClose }: SettingsPageProps) {
@@ -229,6 +234,15 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
             <Section variant="transparent" padding={4}>
               <VStack gap={3} align="start">
                 <Heading level={3}>Tabs</Heading>
+                <SegmentedControl
+                  label="Tab layout"
+                  value={draft.tab_layout}
+                  onChange={(value) => update({ tab_layout: value as TabLayout })}
+                >
+                  {TAB_LAYOUT_OPTIONS.map((option) => (
+                    <SegmentedControlItem key={option.value} value={option.value} label={option.label} />
+                  ))}
+                </SegmentedControl>
                 <Switch
                   label="Sleep inactive tabs"
                   description="Free up resources by hiding tabs you haven't used in a while. They wake when selected."

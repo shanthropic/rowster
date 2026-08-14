@@ -110,6 +110,27 @@ input {
 }
 
 /* =========================================================================
+   Sidebar Tabs & Blended Chrome
+   ========================================================================= */
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] [role="tab"],
+[data-tauri-drag-region] [role="button"],
+[data-tauri-drag-region] a {
+  -webkit-app-region: no-drag;
+}
+
+[role="tablist"][aria-orientation="vertical"]::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+}
+
+/* =========================================================================
    New Tab Page — Fluid, Responsive, Flat Material You Layout
    ========================================================================= */
 

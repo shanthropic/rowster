@@ -57,6 +57,8 @@ import type {
   DownloadRequested,
   PermissionRequested,
   PermissionDecision,
+  SettingsPatch,
+  TabLayout,
 } from "./types";
 import { activeTabOf, useBrowserState } from "./state";
 
@@ -70,6 +72,7 @@ export default function App() {
   const activeTab = activeTabOf(state);
   const activeId = activeTab?.id ?? null;
   const tabs = state.windows[0]?.tabs ?? [];
+  const [tabLayout, setTabLayout] = useState<TabLayout>("horizontal");
   const [pendingDownload, setPendingDownload] = useState<DownloadRequested | null>(null);
   const [openConfirm, setOpenConfirm] = useState<DownloadOpenConfirm | null>(null);
   const [pendingPermission, setPendingPermission] = useState<PermissionRequested | null>(null);
@@ -80,6 +83,50 @@ export default function App() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const sidebarWidthRef = useRef(0);
   const rightSidebarWidthRef = useRef(0);
+
+  useEffect(() => {
+    let alive = true;
+    void settingsGet()
+      .then((settings) => {
+        if (alive && settings.tab_layout) {
+          setTabLayout(settings.tab_layout);
+          if (settings.tab_layout === "vertical") {
+            setSidebarOpen(true);
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        window.dispatchEvent(
+          new CustomEvent("rowster:command-error", { detail: String(error) })
+        );
+      });
+
+    const onSettings = (event: Event) => {
+      const patch = (event as CustomEvent<SettingsPatch>).detail;
+      if (patch?.tab_layout) {
+        setTabLayout(patch.tab_layout);
+        if (patch.tab_layout === "vertical") {
+          setSidebarOpen(true);
+        }
+      }
+    };
+    window.addEventListener("rowster:settings-changed", onSettings);
+    const unlisten = onChromeEvent<unknown>(EV.SETTINGS_CHANGED, () => {
+      void settingsGet().then((settings) => {
+        if (alive && settings.tab_layout) {
+          setTabLayout(settings.tab_layout);
+          if (settings.tab_layout === "vertical") {
+            setSidebarOpen(true);
+          }
+        }
+      });
+    });
+    return () => {
+      alive = false;
+      window.removeEventListener("rowster:settings-changed", onSettings);
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const sendLayout = useCallback(() => {
     const chrome = document.getElementById("rowster-chrome");
@@ -202,6 +249,25 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("rowster:focus-address"));
   }, []);
 
+  const handleNavigate = useCallback(
+    (address: string) => {
+      if (activeId === null) return;
+      runCommand("Navigate", navigate(activeId, address));
+    },
+    [activeId]
+  );
+
+  const handleHome = useCallback(() => {
+    if (activeId === null) return;
+    runCommand(
+      "Navigate home",
+      settingsGet().then((settings) => {
+        const target = settings.home_page?.trim() || "https://duckduckgo.com/";
+        return navigate(activeId, target);
+      })
+    );
+  }, [activeId]);
+
   // Keyboard shortcuts (window-level; inputs stop propagation where needed).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -216,6 +282,12 @@ export default function App() {
       if (mod && e.shiftKey && key === "t") {
         e.preventDefault();
         runCommand("Reopen closed tab", reopenClosed());
+      } else if (mod && e.shiftKey && key === "v") {
+        e.preventDefault();
+        const next: TabLayout = tabLayout === "horizontal" ? "vertical" : "horizontal";
+        setTabLayout(next);
+        if (next === "vertical") setSidebarOpen(true);
+        void settingsSet({ tab_layout: next });
       } else if (mod && e.shiftKey && key === "r" && !inField) {
         e.preventDefault();
         if (activeId !== null) runCommand("Hard reload", hardReload(activeId));
@@ -267,6 +339,9 @@ export default function App() {
       } else if (e.altKey && e.key === "ArrowRight" && activeId !== null) {
         e.preventDefault();
         runCommand("Go forward", goForward(activeId));
+      } else if (e.altKey && e.key === "Home" && activeId !== null) {
+        e.preventDefault();
+        handleHome();
       } else if (e.key === "F5") {
         e.preventDefault();
         if (activeId !== null) runCommand("Reload", reload(activeId));
@@ -276,15 +351,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, activeTab?.loading, focusAddress]);
-
-  const handleNavigate = useCallback(
-    (address: string) => {
-      if (activeId === null) return;
-      runCommand("Navigate", navigate(activeId, address));
-    },
-    [activeId]
-  );
+  }, [activeId, activeTab?.loading, focusAddress, handleHome, tabLayout]);
 
   const downloadHost = pendingDownload
     ? (() => {
@@ -336,10 +403,31 @@ export default function App() {
       contentPadding={0}
       mobileNav={false}
       sideNav={
-        <BrowserSidebar
-          isOpen={sidebarOpen}
-          onWidthChange={handleSidebarWidthChange}
-        />
+        tabLayout === "vertical" ? (
+          <BrowserSidebar
+            isOpen={sidebarOpen}
+            tabLayout={tabLayout}
+            onWidthChange={handleSidebarWidthChange}
+            onToggleSidebar={() => setSidebarOpen((open) => !open)}
+            tabs={tabs}
+            activeId={activeId}
+            onActivate={(id) => runCommand("Activate tab", tabActivate(id))}
+            onClose={(id) => runCommand("Close tab", tabClose(id))}
+            onNewTab={() => runCommand("Create tab", tabCreate())}
+            onReload={(id) => runCommand("Reload tab", reload(id))}
+            onCloseOthers={(id) => runCommand("Close other tabs", tabCloseOthers(id))}
+            onCloseToRight={(id) => runCommand("Close tabs to the right", tabCloseRight(id))}
+            onToggleMute={(id) => {
+              const tab = tabs.find((t) => t.id === id);
+              if (tab) runCommand("Toggle tab audio", tabMute(id, !tab.muted));
+            }}
+            onDiscard={(id) => runCommand("Discard tab", tabDiscard(id))}
+            onDuplicate={(id) => runCommand("Duplicate tab", tabDuplicate(id))}
+            onReorder={(id, beforeId) =>
+              runCommand("Reorder tab", tabReorder(id, beforeId))
+            }
+          />
+        ) : undefined
       }
     >
       <VStack gap={0} style={{ height: "100%", minWidth: 0, flex: 1 }}>
@@ -350,39 +438,63 @@ export default function App() {
           dividers={["bottom"]}
         >
           <VStack gap={0}>
-            <TitleBar
-              isSidebarOpen={sidebarOpen}
-              onToggleSidebar={() => setSidebarOpen((open) => !open)}
-              tabs={tabs}
-              activeId={activeId}
-              onActivate={(id) => runCommand("Activate tab", tabActivate(id))}
-              onClose={(id) => runCommand("Close tab", tabClose(id))}
-              onNewTab={() => runCommand("Create tab", tabCreate())}
-              onReload={(id) => runCommand("Reload tab", reload(id))}
-              onCloseOthers={(id) => runCommand("Close other tabs", tabCloseOthers(id))}
-              onCloseToRight={(id) => runCommand("Close tabs to the right", tabCloseRight(id))}
-              onToggleMute={(id) => {
-                const tab = tabs.find((t) => t.id === id);
-                if (tab) runCommand("Toggle tab audio", tabMute(id, !tab.muted));
-              }}
-              onDiscard={(id) => runCommand("Discard tab", tabDiscard(id))}
-              onDuplicate={(id) => runCommand("Duplicate tab", tabDuplicate(id))}
-              onReorder={(id, beforeId) =>
-                runCommand("Reorder tab", tabReorder(id, beforeId))
-              }
-            />
-            <NavigationBar
-              tab={activeTab}
-              onNavigate={handleNavigate}
-              onBack={(id) => runCommand("Go back", goBack(id))}
-              onForward={(id) => runCommand("Go forward", goForward(id))}
-              onReload={(id) => runCommand("Reload", reload(id))}
-              onStop={(id) => runCommand("Stop loading", stop(id))}
-              onZoomIn={(id) => runCommand("Zoom in", zoomIn(id))}
-              onZoomOut={(id) => runCommand("Zoom out", zoomOut(id))}
-              isRightSidebarOpen={rightSidebarOpen}
-              onToggleRightSidebar={() => setRightSidebarOpen((open) => !open)}
-            />
+            {tabLayout === "horizontal" ? (
+              <>
+                <TitleBar
+                  tabs={tabs}
+                  activeId={activeId}
+                  onActivate={(id) => runCommand("Activate tab", tabActivate(id))}
+                  onClose={(id) => runCommand("Close tab", tabClose(id))}
+                  onNewTab={() => runCommand("Create tab", tabCreate())}
+                  onReload={(id) => runCommand("Reload tab", reload(id))}
+                  onCloseOthers={(id) => runCommand("Close other tabs", tabCloseOthers(id))}
+                  onCloseToRight={(id) => runCommand("Close tabs to the right", tabCloseRight(id))}
+                  onToggleMute={(id) => {
+                    const tab = tabs.find((t) => t.id === id);
+                    if (tab) runCommand("Toggle tab audio", tabMute(id, !tab.muted));
+                  }}
+                  onDiscard={(id) => runCommand("Discard tab", tabDiscard(id))}
+                  onDuplicate={(id) => runCommand("Duplicate tab", tabDuplicate(id))}
+                  onReorder={(id, beforeId) =>
+                    runCommand("Reorder tab", tabReorder(id, beforeId))
+                  }
+                />
+                <NavigationBar
+                  tab={activeTab}
+                  onNavigate={handleNavigate}
+                  onBack={(id) => runCommand("Go back", goBack(id))}
+                  onForward={(id) => runCommand("Go forward", goForward(id))}
+                  onReload={(id) => runCommand("Reload", reload(id))}
+                  onStop={(id) => runCommand("Stop loading", stop(id))}
+                  onHome={handleHome}
+                  onZoomIn={(id) => runCommand("Zoom in", zoomIn(id))}
+                  onZoomOut={(id) => runCommand("Zoom out", zoomOut(id))}
+                  isRightSidebarOpen={rightSidebarOpen}
+                  onToggleRightSidebar={() => setRightSidebarOpen((open) => !open)}
+                />
+              </>
+            ) : (
+              <NavigationBar
+                tab={activeTab}
+                isBlended={true}
+                isSidebarOpen={sidebarOpen}
+                onToggleSidebar={() => setSidebarOpen((open) => !open)}
+                onNavigate={handleNavigate}
+                onBack={(id) => runCommand("Go back", goBack(id))}
+                onForward={(id) => runCommand("Go forward", goForward(id))}
+                onReload={(id) => runCommand("Reload", reload(id))}
+                onStop={(id) => runCommand("Stop loading", stop(id))}
+                onHome={handleHome}
+                onZoomIn={(id) => runCommand("Zoom in", zoomIn(id))}
+                onZoomOut={(id) => runCommand("Zoom out", zoomOut(id))}
+                onNewTab={() => runCommand("Create tab", tabCreate())}
+                onCloseTab={(id) => runCommand("Close tab", tabClose(id))}
+                onOpenHistory={() => runCommand("Open history", showChromePage("history"))}
+                onOpenSettings={() => runCommand("Open settings", showChromePage("settings"))}
+                isRightSidebarOpen={rightSidebarOpen}
+                onToggleRightSidebar={() => setRightSidebarOpen((open) => !open)}
+              />
+            )}
             <BookmarkBar
               activeId={activeId}
               onNavigate={(id, address) => runCommand("Navigate", navigate(id, address))}

@@ -46,6 +46,7 @@ export interface ChromeLayout {
 
 /** Mirrors settings.rs in src-tauri. */
 export type ThemeMode = "system" | "light" | "dark";
+export type TabLayout = "horizontal" | "vertical";
 export type NewTabBehavior = "new_tab_page" | "home" | "blank";
 export type CloseLastTabAction = "new_tab" | "close_window";
 
@@ -57,6 +58,7 @@ export interface Settings {
   ask_before_download: boolean;
   download_dir: string | null;
   theme: ThemeMode;
+  tab_layout: TabLayout;
   zoom_default: number;
   close_last_tab_action: CloseLastTabAction;
   history_retention_days: number;

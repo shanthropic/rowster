@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from "lucide-react";
+import { Copy, Minus, Square, X } from "lucide-react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -12,16 +12,7 @@ import { runCommand } from "../ipc";
  * window controls. The window is frameless (decorations: false), so this
  * row is also the drag handle — empty areas carry `data-tauri-drag-region`.
  */
-interface TitleBarProps extends TabStripProps {
-  isSidebarOpen: boolean;
-  onToggleSidebar: () => void;
-}
-
-export default function TitleBar({
-  isSidebarOpen,
-  onToggleSidebar,
-  ...tabStripProps
-}: TitleBarProps) {
+export default function TitleBar(tabStripProps: TabStripProps) {
   return (
     <HStack
       gap={0}
@@ -30,16 +21,6 @@ export default function TitleBar({
       style={{ height: "var(--spacing-10)", minWidth: 0 }}
       data-tauri-drag-region
     >
-      <IconButton
-        size="sm"
-        variant="ghost"
-        label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-        icon={
-          isSidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />
-        }
-        onClick={onToggleSidebar}
-        tooltip={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
-      />
       <Text type="label" className="browser-wordmark">ROWSTER</Text>
       <TabStrip {...tabStripProps} />
       <WindowControls />
@@ -47,7 +28,7 @@ export default function TitleBar({
   );
 }
 
-function WindowControls() {
+export function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
   useEffect(() => {
     const window = getCurrentWindow();
