@@ -98,11 +98,19 @@ impl WebviewHandle for LiveWebview {
     fn set_muted(&self, muted: bool) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
+            use objc2::msg_send;
+            use objc2::runtime::{NSObjectProtocol, Sel};
             use objc2_web_kit::WKWebView;
             let webview = self.webview.clone();
             webview.with_webview(move |platform| unsafe {
                 let view: &WKWebView = &*platform.inner().cast();
-                view.setMuted(muted);
+                // `setMuted:` is not yet in the objc2-web-kit bindings;
+                // dispatch it directly. The selector is macOS 13.3+, so
+                // guard against older systems.
+                let sel = Sel::register(c"setMuted:");
+                if view.respondsToSelector(sel) {
+                    let _: () = msg_send![view, setMuted: muted];
+                }
             })?;
             return Ok(());
         }

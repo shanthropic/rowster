@@ -152,7 +152,14 @@ pub fn install_webview_hooks(
     install_windows(app, tab_id, webview)?;
     #[cfg(target_os = "linux")]
     install_linux(app, tab_id, webview)?;
+    #[cfg(target_os = "macos")]
+    install_macos(app, tab_id, webview);
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn install_macos(_app: &AppHandle, _tab_id: TabId, _webview: &tauri::Webview) {
+    log::debug!("macOS permission hooks are a no-op (v1 limitation)");
 }
 
 #[cfg(target_os = "windows")]
@@ -235,6 +242,8 @@ fn handle_webview2_permission(
 
 #[cfg(target_os = "linux")]
 fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Result<()> {
+    use webkit2gtk::PermissionRequestExt;
+    use webkit2gtk::UserMediaPermissionRequestExt;
     use webkit2gtk::WebViewExt;
     use webkit2gtk::glib::prelude::*;
 
