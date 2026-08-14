@@ -21,6 +21,7 @@ pub const EV_DOWNLOAD_COMPLETED: &str = "download_completed";
 pub const EV_DOWNLOAD_FAILED: &str = "download_failed";
 pub const EV_DOWNLOAD_CANCELLED: &str = "download_cancelled";
 pub const EV_DOWNLOAD_OPEN_CONFIRM: &str = "download_open_confirm";
+#[cfg(not(target_os = "macos"))]
 pub const EV_PERMISSION_REQUESTED: &str = "permission_requested";
 pub const EV_FIND_STATUS: &str = "find_status";
 pub const EV_FAVICON_CHANGED: &str = "favicon_changed";

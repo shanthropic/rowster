@@ -1,4 +1,6 @@
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
+#[cfg(any(not(target_os = "macos"), test))]
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
@@ -86,6 +88,7 @@ pub fn set(
     Ok(())
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
 pub fn get(
     conn: &Connection,
     origin: &str,

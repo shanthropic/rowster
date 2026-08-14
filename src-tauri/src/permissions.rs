@@ -2,20 +2,29 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[cfg(not(target_os = "macos"))]
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+#[cfg(not(target_os = "macos"))]
+use tauri::Manager;
 
 use crate::error::Result;
+#[cfg(not(target_os = "macos"))]
 use crate::events;
 use crate::model::TabId;
+#[cfg(any(not(target_os = "macos"), test))]
 use crate::repos;
-use crate::repos::permissions::{PermissionDecision, PermissionKind};
+#[cfg(any(not(target_os = "macos"), test))]
+use crate::repos::permissions::PermissionDecision;
+use crate::repos::permissions::PermissionKind;
+#[cfg(not(target_os = "macos"))]
 use crate::state::AppState;
 
 /// How long an "allow once" decision is honoured before a re-prompt.
 const ONCE_TTL: Duration = Duration::from_secs(120);
 
 /// Outcome applied synchronously to the engine's permission request.
+#[cfg(target_os = "windows")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Allow,
@@ -23,6 +32,7 @@ pub enum Decision {
 }
 
 /// Intermediate resolution before prompt emission.
+#[cfg(any(not(target_os = "macos"), test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Resolve {
     Allow,
@@ -31,6 +41,7 @@ enum Resolve {
 }
 
 /// Payload for `EV_PERMISSION_REQUESTED` (chrome prompt).
+#[cfg(not(target_os = "macos"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRequestedPayload {
     pub tab_id: TabId,
@@ -76,6 +87,7 @@ impl PermissionBroker {
 /// Synchronous decision for a single engine permission request.
 ///
 /// Precedence: stored decision > active "allow once" > prompt + deny.
+#[cfg(target_os = "windows")]
 pub fn decide(app: &AppHandle, tab_id: TabId, origin: &str, kind: PermissionKind) -> Decision {
     let Some(state) = app.try_state::<AppState>() else {
         return Decision::Deny;
@@ -113,6 +125,7 @@ pub fn canonical_origin(input: &str) -> Option<String> {
 
 /// Shared resolution core (no `AppHandle` needed; prompt emission is the
 /// caller's job).
+#[cfg(any(not(target_os = "macos"), test))]
 fn resolve(
     db: &crate::db::Db,
     broker: &PermissionBroker,

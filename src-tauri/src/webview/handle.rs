@@ -112,7 +112,7 @@ impl WebviewHandle for LiveWebview {
                     let _: () = msg_send![view, setMuted: muted];
                 }
             })?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(target_os = "linux")]
         {
@@ -121,7 +121,7 @@ impl WebviewHandle for LiveWebview {
             webview.with_webview(move |platform| {
                 platform.inner().set_is_muted(muted);
             })?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
