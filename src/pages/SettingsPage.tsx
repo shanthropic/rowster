@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RotateCcw, Trash2, X } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { Heading } from "@astryxdesign/core/Heading";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -15,10 +15,14 @@ import { Switch } from "@astryxdesign/core/Switch";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Banner } from "@astryxdesign/core/Banner";
 import { clearBrowsingData, permissionsList, permissionReset, permissionResetAll, settingsGet, settingsSet } from "../ipc";
-import type { PermissionKind, Settings, SettingsPatch, SitePermission, TabLayout, ThemeMode } from "../types";
+import type { AuthStatus, PermissionKind, Settings, SettingsPatch, SitePermission, TabLayout, ThemeMode } from "../types";
+import SignInSettings from "../components/SignInSettings";
+import BrowserPage from "../components/BrowserPage";
 
 export interface SettingsPageProps {
   onClose: () => void;
+  auth: AuthStatus;
+  onAuthChange: (status: AuthStatus) => void;
 }
 
 const SEARCH_ENGINE_PRESETS: { label: string; template: string }[] = [
@@ -40,7 +44,7 @@ const TAB_LAYOUT_OPTIONS = [
   { label: "Sidebar (Vertical)", value: "vertical" },
 ];
 
-export default function SettingsPage({ onClose }: SettingsPageProps) {
+export default function SettingsPage({ onClose, auth, onAuthChange }: SettingsPageProps) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -130,11 +134,13 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
   };
 
   return (
-    <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 16))" }}>
-        <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
-          <Heading level={2}>Settings</Heading>
-          <HStack gap={2} align="center">
+    <BrowserPage
+      title="Settings"
+      closeLabel="Close settings"
+      onClose={onClose}
+      width="standard"
+      actions={
+        <>
             <Button
               label="Reset"
               variant="ghost"
@@ -150,10 +156,9 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
               isLoading={saving}
               onClick={save}
             />
-            <IconButton size="sm" variant="ghost" label="Close settings" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
-          </HStack>
-        </HStack>
-        <Divider />
+        </>
+      }
+    >
         {error ? (
           <Banner
             status="error"
@@ -166,6 +171,8 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
 
         {draft ? (
           <>
+            <SignInSettings auth={auth} onAuthChange={onAuthChange} />
+            <Divider />
             <Section variant="transparent" padding={4}>
               <VStack gap={3} align="start">
                 <Heading level={3}>Search</Heading>
@@ -358,7 +365,6 @@ export default function SettingsPage({ onClose }: SettingsPageProps) {
             </Section>
           </>
         ) : null}
-      </VStack>
-    </VStack>
+    </BrowserPage>
   );
 }

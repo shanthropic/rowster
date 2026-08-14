@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+use crate::auth::AuthManager;
 use crate::commands;
 use crate::db::Db;
 use crate::error::Result;
@@ -29,6 +30,14 @@ pub fn run() {
             }
         }))
         .invoke_handler(tauri::generate_handler![
+            commands::auth_status,
+            commands::auth_complete_onboarding,
+            commands::auth_unlock_password,
+            commands::auth_unlock_passkey,
+            commands::auth_set_password,
+            commands::auth_remove_password,
+            commands::auth_set_passkey,
+            commands::auth_update_name,
             commands::startup_info,
             commands::tab_create,
             commands::tab_activate,
@@ -93,6 +102,12 @@ pub fn run() {
                 .unwrap_or_default()
                 .to_string();
             let state = ctx.app_handle().state::<AppState>();
+            if !state.auth.is_unlocked() {
+                return Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Vec::new())
+                    .unwrap();
+            }
             match state.favicons.read_cached(&key) {
                 Some(bytes) => Response::builder()
                     .header(header::CONTENT_TYPE, "image/x-icon")
@@ -125,12 +140,15 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
     let data_dir = app_handle.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
     let db = Db::open(&data_dir)?;
+    let auth = AuthManager::load(&data_dir)?;
     log::info!(
         "database at {}",
         data_dir.join(crate::db::DB_FILE_NAME).display()
     );
 
     let state = AppState {
+        auth,
+        browser_started: std::sync::Arc::new(std::sync::Mutex::new(false)),
         tabs: TabManager::new(),
         db: std::sync::Arc::new(db),
         settings: std::sync::Arc::new(std::sync::Mutex::new(Settings::default())),
@@ -145,20 +163,6 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
             std::collections::HashSet::new(),
         )),
     };
-
-    // Retention cleanup runs before anything reads history.
-    let settings = state.load_settings()?;
-    let retention = settings.history_retention_days;
-    if retention > 0 {
-        let db = state.db.clone();
-        std::thread::spawn(move || {
-            if let Err(e) =
-                db.with_conn(|conn| crate::repos::history::purge_older_than(conn, retention))
-            {
-                log::error!("history retention purge failed: {e}");
-            }
-        });
-    }
 
     // --- Session saver task (debounced) ----------------------------------------------
     let (session_tx, mut session_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -191,13 +195,11 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
         });
     }
 
-    // --- Startup: restore session or open a fresh tab --------------------------------
-    let restored = settings.restore_session && restore_session(&app_handle, &state)?;
-    if !restored {
-        let info = state.tabs.create(&app_handle)?;
-        state.tabs.activate(&app_handle, info.id)?;
+    // Profiles without a password do not need an unlock screen, but first-run
+    // onboarding and password-protected profiles must create no tab webviews.
+    if state.auth.is_unlocked() {
+        ensure_browser_started(&app_handle)?;
     }
-    state.tabs.apply_layout(&app_handle)?;
 
     // Keep tab webviews laid out below the chrome on window resizes.
     if let Some(window) = app_handle.get_window(MAIN_WEBVIEW_LABEL) {
@@ -208,6 +210,40 @@ fn setup(app: &mut tauri::App) -> std::result::Result<(), Box<dyn std::error::Er
             }
         });
     }
+    Ok(())
+}
+
+/// Loads all protected startup state exactly once, after Rust authentication
+/// has succeeded. This is the only path that restores or creates tab webviews.
+pub(crate) fn ensure_browser_started(app: &AppHandle) -> Result<()> {
+    let state = app.state::<AppState>();
+    state.auth.require_unlocked()?;
+    let mut started = crate::error::lock(&state.browser_started)?;
+    if *started {
+        return Ok(());
+    }
+
+    // Settings and history are intentionally untouched until this point.
+    let settings = state.load_settings()?;
+    let retention = settings.history_retention_days;
+    if retention > 0 {
+        let db = state.db.clone();
+        std::thread::spawn(move || {
+            if let Err(error) =
+                db.with_conn(|conn| crate::repos::history::purge_older_than(conn, retention))
+            {
+                log::error!("history retention purge failed: {error}");
+            }
+        });
+    }
+
+    let restored = settings.restore_session && restore_session(app, &state)?;
+    if !restored {
+        let info = state.tabs.create(app)?;
+        state.tabs.activate(app, info.id)?;
+    }
+    state.tabs.apply_layout(app)?;
+    *started = true;
     Ok(())
 }
 
@@ -235,6 +271,9 @@ fn restore_session(app: &AppHandle, state: &AppState) -> Result<bool> {
 /// Serializes the current tab set and writes it atomically.
 fn save_session_now(app: &AppHandle) -> Result<()> {
     let state = app.state::<AppState>();
+    if !state.auth.is_unlocked() || !*crate::error::lock(&state.browser_started)? {
+        return Ok(());
+    }
     let file: SessionFile = state.tabs.session_file();
     state.session.save(&file)
 }

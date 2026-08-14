@@ -130,6 +130,51 @@ input {
   width: 0 !important;
 }
 
+/* Authentication owns the entire window until Rust unlocks protected state. */
+.auth-shell {
+  width: 100%;
+  height: 100%;
+  background: var(--color-background-body);
+}
+
+.auth-titlebar {
+  height: var(--spacing-10);
+  flex: none;
+}
+
+.auth-form {
+  width: 100%;
+}
+
+.auth-unlock-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+.auth-unlock-layout {
+  width: 100%;
+}
+
+.browser-page-standard,
+.browser-page-wide {
+  width: 100%;
+  margin-inline: auto;
+}
+
+.browser-page-standard {
+  max-width: calc(var(--spacing-12) * 16);
+}
+
+.browser-page-wide {
+  max-width: calc(var(--spacing-12) * 20);
+}
+
+.browser-page-loading {
+  width: 100%;
+  min-height: calc(var(--spacing-12) * 4);
+}
+
 /* =========================================================================
    New Tab Page — Fluid, Responsive, Flat Material You Layout
    ========================================================================= */

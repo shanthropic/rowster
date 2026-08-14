@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AuthStatus,
   Bookmark,
   BrowserSnapshot,
   ChromeLayout,
@@ -81,6 +82,30 @@ export interface ZoomChangedPayload extends IdPayload {
 }
 
 export const startupInfo = () => invoke<BrowserSnapshot>("startup_info");
+
+export const authStatus = () => invoke<AuthStatus>("auth_status");
+export const authCompleteOnboarding = (
+  name: string,
+  password: string | null,
+  enablePasskey: boolean,
+) =>
+  invoke<AuthStatus>("auth_complete_onboarding", {
+    name,
+    password,
+    enablePasskey,
+  });
+export const authUnlockPassword = (password: string) =>
+  invoke<AuthStatus>("auth_unlock_password", { password });
+export const authUnlockPasskey = () =>
+  invoke<AuthStatus>("auth_unlock_passkey");
+export const authSetPassword = (currentPassword: string | null, newPassword: string) =>
+  invoke<AuthStatus>("auth_set_password", { currentPassword, newPassword });
+export const authRemovePassword = (currentPassword: string) =>
+  invoke<AuthStatus>("auth_remove_password", { currentPassword });
+export const authSetPasskey = (enabled: boolean, currentPassword: string) =>
+  invoke<AuthStatus>("auth_set_passkey", { enabled, currentPassword });
+export const authUpdateName = (name: string) =>
+  invoke<AuthStatus>("auth_update_name", { name });
 
 export const tabCreate = () => invoke<TabInfo>("tab_create");
 export const tabActivate = (id: TabId) => invoke<void>("tab_activate", { id });

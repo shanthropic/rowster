@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bookmark as BookmarkIcon, ExternalLink, Pencil, Search, Trash2, X } from "lucide-react";
-import { Heading } from "@astryxdesign/core/Heading";
+import { Bookmark as BookmarkIcon, ExternalLink, Pencil, Search, Trash2 } from "lucide-react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Divider } from "@astryxdesign/core/Divider";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -11,6 +9,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { bookmarkDelete, bookmarkEdit, bookmarksList, runCommand } from "../ipc";
 import type { Bookmark } from "../types";
+import BrowserPage, { BrowserPageLoading } from "../components/BrowserPage";
 
 export interface BookmarksPageProps {
   onClose: () => void;
@@ -61,21 +60,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
   const isEmpty = bookmarks !== null && bookmarks.length === 0;
 
   return (
-    <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
-        <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
-          <Heading level={2}>Bookmarks</Heading>
-          <IconButton
-            size="sm"
-            variant="ghost"
-            label="Close bookmarks"
-            icon={<X size={16} />}
-            onClick={onClose}
-            tooltip="Close (Esc)"
-          />
-        </HStack>
-        <Divider />
-
+    <BrowserPage title="Bookmarks" closeLabel="Close bookmarks" onClose={onClose}>
         <TextInput
           label="Search bookmarks"
           isLabelHidden
@@ -84,7 +69,7 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
           placeholder="Search bookmarks"
           startIcon={<Search size={16} />}
           hasClear
-          style={{ width: "100%" }}
+          width="100%"
         />
 
         {editing !== null ? (
@@ -107,11 +92,12 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
               <Button label="Save" variant="primary" size="sm" onClick={() => runCommand("Save bookmark", saveEdit())} />
               <Button label="Cancel" variant="ghost" size="sm" onClick={() => setEditing(null)} />
             </HStack>
-            <Divider />
           </VStack>
         ) : null}
 
-        {bookmarks === null ? null : isEmpty ? (
+        {bookmarks === null ? (
+          <BrowserPageLoading label="Loading bookmarks" />
+        ) : isEmpty ? (
           <EmptyState
             title="No bookmarks"
             description="Star any page in the address bar to save it here."
@@ -165,7 +151,6 @@ export default function BookmarksPage({ onClose, onNavigate }: BookmarksPageProp
             ))}
           </List>
         )}
-      </VStack>
-    </VStack>
+    </BrowserPage>
   );
 }

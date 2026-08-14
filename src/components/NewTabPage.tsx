@@ -7,6 +7,7 @@ import type { HistoryEntry } from "../types";
 
 export interface NewTabPageProps {
   onNavigate: (address: string) => void;
+  userName: string;
 }
 
 /**
@@ -14,7 +15,7 @@ export interface NewTabPageProps {
  * Features an analog scalloped clock, personalized greeting/date,
  * capsule search bar, search engine picker, and a dedicated frequent sites popover.
  */
-export default function NewTabPage({ onNavigate }: NewTabPageProps) {
+export default function NewTabPage({ onNavigate, userName }: NewTabPageProps) {
   const [frequent, setFrequent] = useState<HistoryEntry[]>([]);
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function NewTabPage({ onNavigate }: NewTabPageProps) {
     <div className="newtab-viewport">
       <Center style={{ height: "100%", width: "100%" }}>
         <div className="newtab-hero-container">
-          <MaterialClock userName="Shanto Islam" />
+          <MaterialClock userName={userName} />
           <SearchSection onNavigate={onNavigate} frequent={frequent} />
         </div>
       </Center>

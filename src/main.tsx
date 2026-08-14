@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
@@ -8,7 +8,9 @@ import { rowsterTheme } from "./theme/rowster";
 import "./theme/rowster.css";
 import "./styles/chrome.css";
 import App from "./App";
-import { settingsGet } from "./ipc";
+import AuthScreens from "./components/AuthScreens";
+import { authStatus, settingsGet } from "./ipc";
+import type { AuthStatus } from "./types";
 
 document.documentElement.style.height = "100%";
 document.body.style.height = "100%";
@@ -17,8 +19,20 @@ rootElement.style.height = "100%";
 
 function Root() {
   const [mode, setMode] = useState<"system" | "light" | "dark">("system");
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const loadAuth = useCallback(() => {
+    setAuthError(null);
+    void authStatus()
+      .then(setAuth)
+      .catch((error: unknown) => setAuthError(String(error)));
+  }, []);
+
+  useEffect(loadAuth, [loadAuth]);
 
   useEffect(() => {
+    if (auth?.phase !== "unlocked") return;
     let alive = true;
     void settingsGet()
       .then((settings) => {
@@ -38,11 +52,20 @@ function Root() {
       alive = false;
       window.removeEventListener("rowster:settings-changed", onSettings);
     };
-  }, []);
+  }, [auth?.phase]);
 
   return (
     <Theme theme={rowsterTheme} mode={mode}>
-      <App />
+      {auth?.phase === "unlocked" ? (
+        <App auth={auth} onAuthChange={setAuth} />
+      ) : (
+        <AuthScreens
+          status={auth}
+          loadError={authError}
+          onAuthenticated={setAuth}
+          onRetry={loadAuth}
+        />
+      )}
     </Theme>
   );
 }
