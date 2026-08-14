@@ -114,7 +114,12 @@ export default function TabStrip({
   }, [dragCandidate, draggingId, listRef, onReorder, tabs]);
 
   return (
-    <HStack gap={0} align="center" style={{ minWidth: 0, flex: 1, height: "100%" }}>
+    <HStack
+      gap={0}
+      align="center"
+      style={{ minWidth: 0, flex: 1, height: "100%" }}
+      data-tauri-drag-region
+    >
       <HStack
         ref={listRef as React.RefObject<HTMLDivElement>}
         role="tablist"
@@ -123,7 +128,7 @@ export default function TabStrip({
         align="center"
         style={{
           minWidth: 0,
-          flex: 1,
+          flex: "0 1 auto",
           height: "100%",
           overflow: "hidden",
           touchAction: draggingId ? "none" : "auto",
@@ -169,6 +174,7 @@ export default function TabStrip({
         icon={<Plus size={16} />}
         onClick={onNewTab}
         tooltip="New tab (Ctrl+T)"
+        style={{ flex: "none", marginInlineStart: "var(--spacing-1)" }}
       />
     </HStack>
   );
@@ -294,8 +300,9 @@ function TabItem({
         }}
         style={{
           height: "var(--spacing-8)",
-          flex: "0 1 30%",
-          minWidth: 0,
+          flex: "1 1 auto",
+          maxWidth: 220,
+          minWidth: 48,
           cursor: "pointer",
           borderRadius: "var(--radius-md)",
           background: isActive ? "var(--color-background-surface)" : "transparent",

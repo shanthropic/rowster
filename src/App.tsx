@@ -12,6 +12,7 @@ import { AppShell } from "@astryxdesign/core/AppShell";
 import TitleBar from "./components/TitleBar";
 import NavigationBar from "./components/NavigationBar";
 import BrowserSidebar from "./components/Sidebar";
+import RightSidebar from "./components/RightSidebar";
 import BookmarkBar from "./components/BookmarkBar";
 import StatusBar from "./components/StatusBar";
 import BrowserErrorBanner from "./components/BrowserErrorBanner";
@@ -75,8 +76,10 @@ export default function App() {
   const [statusbarVisible, setStatusbarVisible] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const sidebarWidthRef = useRef(0);
+  const rightSidebarWidthRef = useRef(0);
 
   const sendLayout = useCallback(() => {
     const chrome = document.getElementById("rowster-chrome");
@@ -93,7 +96,7 @@ export default function App() {
         top: Math.round(chromeRect.bottom),
         bottom,
         left: Math.round(sidebarWidthRef.current),
-        right: 0,
+        right: Math.round(rightSidebarWidthRef.current),
       })
     );
   }, [statusbarVisible]);
@@ -101,6 +104,14 @@ export default function App() {
   const handleSidebarWidthChange = useCallback(
     (width: number) => {
       sidebarWidthRef.current = width;
+      sendLayout();
+    },
+    [sendLayout]
+  );
+
+  const handleRightSidebarWidthChange = useCallback(
+    (width: number) => {
+      rightSidebarWidthRef.current = width;
       sendLayout();
     },
     [sendLayout]
@@ -160,7 +171,10 @@ export default function App() {
 
   const hasModal = pendingDownload !== null || openConfirm !== null || pendingPermission !== null;
   useEffect(() => {
-    runCommand("Update chrome overlay", chromeOverlayChanged(hasModal || popoverOpen));
+    // DISABLED: overlay detection is intact but always reports closed so the
+    // webview stays visible behind modals/popovers. To re-enable, change the
+    // argument below back to `hasModal || popoverOpen`.
+    runCommand("Update chrome overlay", chromeOverlayChanged(false));
   }, [hasModal, popoverOpen]);
 
   // Download prompts and executable-open confirmations.
@@ -324,12 +338,7 @@ export default function App() {
       sideNav={
         <BrowserSidebar
           isOpen={sidebarOpen}
-          activePage={activeTab?.chrome_page ?? null}
           onWidthChange={handleSidebarWidthChange}
-          onNewTab={() => runCommand("Create tab", tabCreate())}
-          onReopenClosed={() => runCommand("Reopen closed tab", reopenClosed())}
-          onFind={() => setFindOpen(true)}
-          onShowPage={(page) => runCommand("Open browser page", showChromePage(page))}
         />
       }
     >
@@ -371,12 +380,8 @@ export default function App() {
               onStop={(id) => runCommand("Stop loading", stop(id))}
               onZoomIn={(id) => runCommand("Zoom in", zoomIn(id))}
               onZoomOut={(id) => runCommand("Zoom out", zoomOut(id))}
-              onZoomReset={(id) => runCommand("Reset zoom", zoomReset(id))}
-              onHardReload={(id) => runCommand("Hard reload", hardReload(id))}
-              onNewTab={() => runCommand("Create tab", tabCreate())}
-              onReopenClosed={() => runCommand("Reopen closed tab", reopenClosed())}
-              onFind={() => setFindOpen(true)}
-              onShowPage={(page) => runCommand("Open browser page", showChromePage(page))}
+              isRightSidebarOpen={rightSidebarOpen}
+              onToggleRightSidebar={() => setRightSidebarOpen((open) => !open)}
             />
             <BookmarkBar
               activeId={activeId}
@@ -388,31 +393,44 @@ export default function App() {
           </VStack>
         </Section>
         <StackItem size="fill" style={{ position: "relative", minHeight: 0 }}>
-          <Suspense
-            fallback={
-              <HStack align="center" justify="center" style={{ height: "100%" }}>
-                <Spinner size="md" aria-label="Loading browser page" />
-              </HStack>
-            }
-          >
-            {activeTab?.chrome_page === "settings" ? (
-              <SettingsPage onClose={() => runCommand("Close settings", showChromePage(null))} />
-            ) : activeTab?.chrome_page === "history" ? (
-              <HistoryPage
-                onClose={() => runCommand("Close history", showChromePage(null))}
-                onNavigate={handleNavigate}
-              />
-            ) : activeTab?.chrome_page === "bookmarks" ? (
-              <BookmarksPage
-                onClose={() => runCommand("Close bookmarks", showChromePage(null))}
-                onNavigate={handleNavigate}
-              />
-            ) : activeTab?.chrome_page === "downloads" ? (
-              <DownloadsPage onClose={() => runCommand("Close downloads", showChromePage(null))} />
-            ) : activeTab?.is_new ? (
-              <NewTabPage onNavigate={handleNavigate} />
-            ) : null}
-          </Suspense>
+          <HStack gap={0} style={{ height: "100%" }}>
+            <StackItem size="fill" style={{ position: "relative", minHeight: 0 }}>
+              <Suspense
+                fallback={
+                  <HStack align="center" justify="center" style={{ height: "100%" }}>
+                    <Spinner size="md" aria-label="Loading browser page" />
+                  </HStack>
+                }
+              >
+                {activeTab?.chrome_page === "settings" ? (
+                  <SettingsPage onClose={() => runCommand("Close settings", showChromePage(null))} />
+                ) : activeTab?.chrome_page === "history" ? (
+                  <HistoryPage
+                    onClose={() => runCommand("Close history", showChromePage(null))}
+                    onNavigate={handleNavigate}
+                  />
+                ) : activeTab?.chrome_page === "bookmarks" ? (
+                  <BookmarksPage
+                    onClose={() => runCommand("Close bookmarks", showChromePage(null))}
+                    onNavigate={handleNavigate}
+                  />
+                ) : activeTab?.chrome_page === "downloads" ? (
+                  <DownloadsPage onClose={() => runCommand("Close downloads", showChromePage(null))} />
+                ) : activeTab?.is_new ? (
+                  <NewTabPage onNavigate={handleNavigate} />
+                ) : null}
+              </Suspense>
+            </StackItem>
+            <RightSidebar
+              isOpen={rightSidebarOpen}
+              activePage={activeTab?.chrome_page ?? null}
+              onWidthChange={handleRightSidebarWidthChange}
+              onNewTab={() => runCommand("Create tab", tabCreate())}
+              onReopenClosed={() => runCommand("Reopen closed tab", reopenClosed())}
+              onFind={() => setFindOpen(true)}
+              onShowPage={(page) => runCommand("Open browser page", showChromePage(page))}
+            />
+          </HStack>
         </StackItem>
         <StatusBar
           visible={statusbarVisible}

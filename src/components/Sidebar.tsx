@@ -1,39 +1,14 @@
 import { useEffect, useRef } from "react";
-import {
-  Bookmark,
-  Download,
-  History,
-  Plus,
-  Search,
-  Settings,
-  Undo2,
-} from "lucide-react";
-import {
-  SideNav,
-  SideNavItem,
-  SideNavSection,
-} from "@astryxdesign/core/SideNav";
 import { HStack } from "@astryxdesign/core/HStack";
-import type { ChromePage } from "../types";
 
 interface BrowserSidebarProps {
   isOpen: boolean;
-  activePage: ChromePage | null;
   onWidthChange: (width: number) => void;
-  onNewTab: () => void;
-  onReopenClosed: () => void;
-  onFind: () => void;
-  onShowPage: (page: ChromePage) => void;
 }
 
 export default function BrowserSidebar({
   isOpen,
-  activePage,
   onWidthChange,
-  onNewTab,
-  onReopenClosed,
-  onFind,
-  onShowPage,
 }: BrowserSidebarProps) {
   const containerRef = useRef<HTMLElement | null>(null);
 
@@ -69,46 +44,6 @@ export default function BrowserSidebar({
         transition:
           "width var(--duration-medium) var(--ease-standard), min-width var(--duration-medium) var(--ease-standard)",
       }}
-    >
-      {isOpen ? <SideNav style={{ width: "calc(var(--spacing-12) * 5.5)" }}>
-        <SideNavSection title="Browser" isHeaderHidden>
-          <SideNavItem label="New tab" icon={Plus} onClick={onNewTab} />
-          <SideNavItem
-            label="Reopen closed tab"
-            icon={Undo2}
-            onClick={onReopenClosed}
-          />
-          <SideNavItem label="Find in page" icon={Search} onClick={onFind} />
-        </SideNavSection>
-        <SideNavSection title="Library">
-          <SideNavItem
-            label="History"
-            icon={History}
-            isSelected={activePage === "history"}
-            onClick={() => onShowPage("history")}
-          />
-          <SideNavItem
-            label="Bookmarks"
-            icon={Bookmark}
-            isSelected={activePage === "bookmarks"}
-            onClick={() => onShowPage("bookmarks")}
-          />
-          <SideNavItem
-            label="Downloads"
-            icon={Download}
-            isSelected={activePage === "downloads"}
-            onClick={() => onShowPage("downloads")}
-          />
-        </SideNavSection>
-        <SideNavSection title="Preferences">
-          <SideNavItem
-            label="Settings"
-            icon={Settings}
-            isSelected={activePage === "settings"}
-            onClick={() => onShowPage("settings")}
-          />
-        </SideNavSection>
-      </SideNav> : null}
-    </HStack>
+    />
   );
 }

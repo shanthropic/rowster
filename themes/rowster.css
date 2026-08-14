@@ -1,0 +1,570 @@
+/*
+ * Rowster Theme — portable CSS variables
+ *
+ * Standalone, framework-agnostic export of the Rowster theme for use in any
+ * other app (plain HTML, React, Vue, Svelte, ...). No Astryx dependency.
+ *
+ * Single source of truth: src/theme/rowsterTheme.ts. This file is a manual
+ * one-time export — re-export it whenever the theme changes.
+ *
+ * Usage:
+ *   <link rel="stylesheet" href="rowster.css">          <!-- plain HTML -->
+ *   <div data-theme="dark">…</div>                       <!-- switch mode via attribute -->
+ *
+ * Mode resolution:
+ *   - auto             → system preference (via prefers-color-scheme)
+ *   - <html data-theme="light"> / <html data-theme="dark"> → forced override
+ *
+ * All values mirror the compiled src/theme/rowster.css token-for-token.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ------------------------------------------------------------------ */
+  /* Static (mode-independent) tokens                                   */
+  /* ------------------------------------------------------------------ */
+
+  --color-on-dark: #ffffff;
+  --color-on-light: #171717;
+  --color-on-warning: #171717;
+
+  --radius-none: 0px;
+  --radius-inner: 4px;
+  --radius-element: 8px;
+  --radius-container: 12px;
+  --radius-page: 28px;
+  --radius-chat: 16px;
+  --radius-full: 9999px;
+
+  --shadow-inset-hover: inset 0px 0px 0px 2px #0074e24d;
+  --shadow-inset-selected: inset 0px 0px 0px 2px #0074e280;
+  --shadow-inset-success: inset 0px 0px 0px 2px #1981004d;
+  --shadow-inset-warning: inset 0px 0px 0px 2px #ffce2f4d;
+  --shadow-inset-error: inset 0px 0px 0px 2px #e33f4a4d;
+
+  --font-family-body: Figtree, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-family-heading: Figtree, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-family-code: ui-monospace, "SF Mono", Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+
+  /* Font scale (base 14 · ratio 1.2) + weights */
+  --font-size-4xs: 0.375rem;
+  --font-size-3xs: 0.4375rem;
+  --font-size-2xs: 0.5rem;
+  --font-size-xs: 0.625rem;
+  --font-size-sm: 0.75rem;
+  --font-size-base: 0.875rem;
+  --font-size-lg: 1.0625rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.8125rem;
+  --font-size-4xl: 2.1875rem;
+  --font-size-5xl: 2.625rem;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Text styles (sizes/weights/leadings) */
+  --text-heading-1-size: var(--font-size-2xl);
+  --text-heading-1-weight: var(--font-weight-semibold);
+  --text-heading-1-leading: 1.3333;
+  --text-heading-2-size: var(--font-size-xl);
+  --text-heading-2-weight: var(--font-weight-semibold);
+  --text-heading-2-leading: 1.4;
+  --text-heading-3-size: var(--font-size-lg);
+  --text-heading-3-weight: var(--font-weight-bold);
+  --text-heading-3-leading: 1.4118;
+  --text-heading-4-size: var(--font-size-base);
+  --text-heading-4-weight: var(--font-weight-bold);
+  --text-heading-4-leading: 1.4286;
+  --text-heading-5-size: var(--font-size-sm);
+  --text-heading-5-weight: var(--font-weight-semibold);
+  --text-heading-5-leading: 1.6667;
+  --text-heading-6-size: var(--font-size-xs);
+  --text-heading-6-weight: var(--font-weight-semibold);
+  --text-heading-6-leading: 1.6;
+  --text-body-size: var(--font-size-base);
+  --text-body-weight: var(--font-weight-normal);
+  --text-body-leading: 1.4286;
+  --text-large-size: var(--font-size-lg);
+  --text-large-weight: var(--font-weight-semibold);
+  --text-large-leading: 1.4118;
+  --text-label-size: var(--font-size-base);
+  --text-label-weight: var(--font-weight-medium);
+  --text-label-leading: 1.4286;
+  --text-code-size: var(--font-size-base);
+  --text-code-weight: var(--font-weight-normal);
+  --text-code-leading: 1.4286;
+  --text-supporting-size: var(--font-size-sm);
+  --text-supporting-weight: var(--font-weight-normal);
+  --text-supporting-leading: 1.6667;
+  --text-display-1-size: var(--font-size-5xl);
+  --text-display-1-weight: var(--font-weight-normal);
+  --text-display-1-leading: 1.2381;
+  --text-display-2-size: var(--font-size-4xl);
+  --text-display-2-weight: var(--font-weight-normal);
+  --text-display-2-leading: 1.2571;
+  --text-display-3-size: var(--font-size-3xl);
+  --text-display-3-weight: var(--font-weight-normal);
+  --text-display-3-leading: 1.3793;
+
+  /* Motion (Material 3 emphasis durations) */
+  --duration-fast-min: 150ms;
+  --duration-fast: 200ms;
+  --duration-fast-max: 265ms;
+  --duration-medium-min: 225ms;
+  --duration-medium: 300ms;
+  --duration-medium-max: 400ms;
+  --duration-slow-min: 375ms;
+  --duration-slow: 500ms;
+  --duration-slow-max: 665ms;
+}
+
+/* ==================================================================== */
+/* Light mode                                                           */
+/* ==================================================================== */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Backgrounds */
+  --color-background-surface: #ffffff;
+  --color-background-body: #f1f1f1;
+  --color-background-card: #ffffff;
+  --color-background-popover: #ffffff;
+  --color-background-muted: #f1f1f1;
+
+  /* Accent + neutral */
+  --color-accent: #262626;
+  --color-accent-muted: #f1f1f1;
+  --color-neutral: #0000000f;
+
+  /* Overlays */
+  --color-overlay: #00000080;
+  --color-overlay-hover: #0000000d;
+  --color-overlay-pressed: #0000001a;
+
+  /* Text */
+  --color-text-primary: #171717;
+  --color-text-secondary: #737373;
+  --color-text-disabled: #a3a3a3;
+  --color-text-accent: #262626;
+  --color-on-accent: #ffffff;
+  --color-on-success: #ffffff;
+  --color-on-error: #ffffff;
+
+  /* Icons */
+  --color-icon-accent: #262626;
+  --color-icon-primary: #171717;
+  --color-icon-secondary: #737373;
+  --color-icon-disabled: #a3a3a3;
+
+  /* Status */
+  --color-success: #007004;
+  --color-error: #a50c25;
+  --color-warning: #745b00;
+  --color-success-muted: #c5e5c0;
+  --color-error-muted: #facecb;
+  --color-warning-muted: #f8da9d;
+
+  /* Border */
+  --color-border: #00000014;
+  --color-border-emphasized: #d4d4d4;
+
+  /* Effects */
+  --color-skeleton: #ebebeb;
+  --color-shadow: #0000001a;
+  --color-tint-hover: black;
+
+  /* Categorical — red */
+  --color-background-red: #facecb;
+  --color-border-red: #e6bab8;
+  --color-icon-red: #89001a;
+  --color-text-red: #89001a;
+
+  /* Categorical — orange */
+  --color-background-orange: #fad0b5;
+  --color-border-orange: #e6bda2;
+  --color-icon-orange: #6e3500;
+  --color-text-orange: #6e3500;
+
+  /* Categorical — yellow */
+  --color-background-yellow: #f8da9d;
+  --color-border-yellow: #e4c279;
+  --color-icon-yellow: #584400;
+  --color-text-yellow: #584400;
+
+  /* Categorical — green */
+  --color-background-green: #c5e5c0;
+  --color-border-green: #b2d1ac;
+  --color-icon-green: #0c5700;
+  --color-text-green: #0c5700;
+
+  /* Categorical — teal */
+  --color-background-teal: #a5e3d6;
+  --color-border-teal: #94d6c8;
+  --color-icon-teal: #005348;
+  --color-text-teal: #005348;
+
+  /* Categorical — cyan */
+  --color-background-cyan: #a3e0ef;
+  --color-border-cyan: #91d3e3;
+  --color-icon-cyan: #00505f;
+  --color-text-cyan: #00505f;
+
+  /* Categorical — blue */
+  --color-background-blue: #c4ddfb;
+  --color-border-blue: #b1c9e7;
+  --color-icon-blue: #00458c;
+  --color-text-blue: #00458c;
+
+  /* Categorical — purple */
+  --color-background-purple: #eccef3;
+  --color-border-purple: #d8bbdf;
+  --color-icon-purple: #700084;
+  --color-text-purple: #700084;
+
+  /* Categorical — pink */
+  --color-background-pink: #fccadc;
+  --color-border-pink: #e7b7c8;
+  --color-icon-pink: #83004b;
+  --color-text-pink: #83004b;
+
+  /* Categorical — gray */
+  --color-background-gray: #e5e5e5;
+  --color-border-gray: #d4d4d4;
+  --color-icon-gray: #525252;
+  --color-text-gray: #262626;
+
+  /* Syntax */
+  --color-syntax-keyword: #700084;
+  --color-syntax-string: #005600;
+  --color-syntax-comment: #737373;
+  --color-syntax-number: #6e3500;
+  --color-syntax-function: #00458c;
+  --color-syntax-type: #700084;
+  --color-syntax-variable: #171717;
+  --color-syntax-operator: #737373;
+  --color-syntax-constant: #6e3500;
+  --color-syntax-tag: #89001a;
+  --color-syntax-attribute: #584400;
+  --color-syntax-property: #005348;
+  --color-syntax-punctuation: #a3a3a3;
+  --color-syntax-background: #fafafa;
+
+  /* Saturated fills (badge/statusdot stops) */
+  --color-fill-info: #0074e2;
+  --color-fill-success: #198100;
+  --color-fill-warning: #ffce2f;
+  --color-fill-error: #e33f4a;
+  --color-on-fill-info: #ffffff;
+  --color-on-fill-success: #ffffff;
+  --color-on-fill-warning: #171717;
+  --color-on-fill-error: #ffffff;
+
+  /* Shadows */
+  --shadow-low:
+    0 2px 4px oklch(0 0 0 / 5%), 0 4px 8px oklch(0 0 0 / 10%),
+    inset 0 0 0 1px transparent;
+  --shadow-med:
+    0 2px 4px oklch(0 0 0 / 5%), 0 4px 12px oklch(0 0 0 / 10%),
+    inset 0 0 0 1px transparent;
+  --shadow-high:
+    0 4px 6px oklch(0 0 0 / 10%), 0 12px 24px oklch(0 0 0 / 15%),
+    inset 0 0 0 1px transparent;
+}
+
+/* ==================================================================== */
+/* Dark mode                                                            */
+/* ==================================================================== */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --color-background-surface: #262626;
+  --color-background-body: #1b1b1b;
+  --color-background-card: #1b1b1b;
+  --color-background-popover: #1b1b1b;
+  --color-background-muted: #1b1b1b;
+
+  /* Accent + neutral */
+  --color-accent: #ebebeb;
+  --color-accent-muted: #262626;
+  --color-neutral: #ffffff1a;
+
+  /* Overlays */
+  --color-overlay: #000000cc;
+  --color-overlay-hover: #ffffff0d;
+  --color-overlay-pressed: #ffffff1a;
+
+  /* Text */
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #a3a3a3;
+  --color-text-disabled: #525252;
+  --color-text-accent: #ebebeb;
+  --color-on-accent: #171717;
+  --color-on-success: #171717;
+  --color-on-error: #171717;
+
+  /* Icons */
+  --color-icon-accent: #ebebeb;
+  --color-icon-primary: #fafafa;
+  --color-icon-secondary: #a3a3a3;
+  --color-icon-disabled: #525252;
+
+  /* Status */
+  --color-success: #9fe59b;
+  --color-error: #ffc6c1;
+  --color-warning: #fdcf4f;
+  --color-success-muted: #84c9803d;
+  --color-error-muted: #ff9e973d;
+  --color-warning-muted: #deb4333d;
+
+  /* Border */
+  --color-border: #ffffff1a;
+  --color-border-emphasized: #525252;
+
+  /* Effects */
+  --color-skeleton: #525252;
+  --color-shadow: #0000004d;
+  --color-tint-hover: white;
+
+  /* Categorical — red */
+  --color-background-red: #ff9e973d;
+  --color-border-red: #ff6f6c;
+  --color-icon-red: #ff9e97;
+  --color-text-red: #ffc6c1;
+
+  /* Categorical — orange */
+  --color-background-orange: #ffa2583d;
+  --color-border-orange: #e2883e;
+  --color-icon-orange: #ffa258;
+  --color-text-orange: #ffc9a2;
+
+  /* Categorical — yellow */
+  --color-background-yellow: #deb4333d;
+  --color-border-yellow: #c0990e;
+  --color-icon-yellow: #deb433;
+  --color-text-yellow: #fdcf4f;
+
+  /* Categorical — green */
+  --color-background-green: #84c9803d;
+  --color-border-green: #69ad67;
+  --color-icon-green: #84c980;
+  --color-text-green: #9fe59b;
+
+  /* Categorical — teal */
+  --color-background-teal: #7ec6b83d;
+  --color-border-teal: #63ab9d;
+  --color-icon-teal: #7ec6b8;
+  --color-text-teal: #99e2d3;
+
+  /* Categorical — cyan */
+  --color-background-cyan: #83c2d43d;
+  --color-border-cyan: #67a7b8;
+  --color-icon-cyan: #83c2d4;
+  --color-text-cyan: #9edef0;
+
+  /* Categorical — blue */
+  --color-background-blue: #9eb7ff3d;
+  --color-border-blue: #6d9cfe;
+  --color-icon-blue: #9eb7ff;
+  --color-text-blue: #c7d3ff;
+
+  /* Categorical — purple */
+  --color-background-purple: #f297ff3d;
+  --color-border-purple: #dd74f0;
+  --color-icon-purple: #f297ff;
+  --color-text-purple: #fac1ff;
+
+  /* Categorical — pink */
+  --color-background-pink: #ff99c33d;
+  --color-border-pink: #f273aa;
+  --color-icon-pink: #ff99c3;
+  --color-text-pink: #ffc3da;
+
+  /* Categorical — gray */
+  --color-background-gray: var(--color-neutral);
+  --color-border-gray: #262626;
+  --color-icon-gray: #a3a3a3;
+  --color-text-gray: #e5e5e5;
+
+  /* Syntax */
+  --color-syntax-keyword: #efa8ff;
+  --color-syntax-string: #a6d2a2;
+  --color-syntax-comment: #a3a3a3;
+  --color-syntax-number: #ffb37f;
+  --color-syntax-function: #a0caff;
+  --color-syntax-type: #efa8ff;
+  --color-syntax-variable: #e5e5e5;
+  --color-syntax-operator: #a3a3a3;
+  --color-syntax-constant: #ffb37f;
+  --color-syntax-tag: #ffaeaa;
+  --color-syntax-attribute: #eec12f;
+  --color-syntax-property: #83dac9;
+  --color-syntax-punctuation: #525252;
+  --color-syntax-background: #0a0a0a;
+
+  /* Saturated fills (badge/statusdot stops) */
+  --color-fill-info: #6d9cfe;
+  --color-fill-success: #64af4c;
+  --color-fill-warning: #ffce2f;
+  --color-fill-error: #ff705d;
+  --color-on-fill-info: #171717;
+  --color-on-fill-success: #171717;
+  --color-on-fill-warning: #171717;
+  --color-on-fill-error: #171717;
+
+  /* Shadows */
+  --shadow-low:
+    0 2px 4px oklch(0 0 0 / 25%), 0 4px 8px oklch(0 0 0 / 40%),
+    inset 0 0 0 1px oklch(1 0 0 / 8%);
+  --shadow-med:
+    0 2px 4px oklch(0 0 0 / 35%), 0 4px 12px oklch(0 0 0 / 50%),
+    inset 0 0 0 1px oklch(1 0 0 / 12%);
+  --shadow-high:
+    0 4px 6px oklch(0 0 0 / 50%), 0 12px 24px oklch(0 0 0 / 70%),
+    inset 0 0 0 1px oklch(1 0 0 / 15%);
+}
+
+/* ==================================================================== */
+/* Auto mode — dark when the system prefers it (unless forced light)    */
+/* ==================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --color-background-surface: #262626;
+    --color-background-body: #1b1b1b;
+    --color-background-card: #1b1b1b;
+    --color-background-popover: #1b1b1b;
+    --color-background-muted: #1b1b1b;
+
+    --color-accent: #ebebeb;
+    --color-accent-muted: #262626;
+    --color-neutral: #ffffff1a;
+
+    --color-overlay: #000000cc;
+    --color-overlay-hover: #ffffff0d;
+    --color-overlay-pressed: #ffffff1a;
+
+    --color-text-primary: #fafafa;
+    --color-text-secondary: #a3a3a3;
+    --color-text-disabled: #525252;
+    --color-text-accent: #ebebeb;
+    --color-on-accent: #171717;
+    --color-on-success: #171717;
+    --color-on-error: #171717;
+
+    --color-icon-accent: #ebebeb;
+    --color-icon-primary: #fafafa;
+    --color-icon-secondary: #a3a3a3;
+    --color-icon-disabled: #525252;
+
+    --color-success: #9fe59b;
+    --color-error: #ffc6c1;
+    --color-warning: #fdcf4f;
+    --color-success-muted: #84c9803d;
+    --color-error-muted: #ff9e973d;
+    --color-warning-muted: #deb4333d;
+
+    --color-border: #ffffff1a;
+    --color-border-emphasized: #525252;
+
+    --color-skeleton: #525252;
+    --color-shadow: #0000004d;
+    --color-tint-hover: white;
+
+    --color-background-red: #ff9e973d;
+    --color-border-red: #ff6f6c;
+    --color-icon-red: #ff9e97;
+    --color-text-red: #ffc6c1;
+
+    --color-background-orange: #ffa2583d;
+    --color-border-orange: #e2883e;
+    --color-icon-orange: #ffa258;
+    --color-text-orange: #ffc9a2;
+
+    --color-background-yellow: #deb4333d;
+    --color-border-yellow: #c0990e;
+    --color-icon-yellow: #deb433;
+    --color-text-yellow: #fdcf4f;
+
+    --color-background-green: #84c9803d;
+    --color-border-green: #69ad67;
+    --color-icon-green: #84c980;
+    --color-text-green: #9fe59b;
+
+    --color-background-teal: #7ec6b83d;
+    --color-border-teal: #63ab9d;
+    --color-icon-teal: #7ec6b8;
+    --color-text-teal: #99e2d3;
+
+    --color-background-cyan: #83c2d43d;
+    --color-border-cyan: #67a7b8;
+    --color-icon-cyan: #83c2d4;
+    --color-text-cyan: #9edef0;
+
+    --color-background-blue: #9eb7ff3d;
+    --color-border-blue: #6d9cfe;
+    --color-icon-blue: #9eb7ff;
+    --color-text-blue: #c7d3ff;
+
+    --color-background-purple: #f297ff3d;
+    --color-border-purple: #dd74f0;
+    --color-icon-purple: #f297ff;
+    --color-text-purple: #fac1ff;
+
+    --color-background-pink: #ff99c33d;
+    --color-border-pink: #f273aa;
+    --color-icon-pink: #ff99c3;
+    --color-text-pink: #ffc3da;
+
+    --color-background-gray: var(--color-neutral);
+    --color-border-gray: #262626;
+    --color-icon-gray: #a3a3a3;
+    --color-text-gray: #e5e5e5;
+
+    --color-syntax-keyword: #efa8ff;
+    --color-syntax-string: #a6d2a2;
+    --color-syntax-comment: #a3a3a3;
+    --color-syntax-number: #ffb37f;
+    --color-syntax-function: #a0caff;
+    --color-syntax-type: #efa8ff;
+    --color-syntax-variable: #e5e5e5;
+    --color-syntax-operator: #a3a3a3;
+    --color-syntax-constant: #ffb37f;
+    --color-syntax-tag: #ffaeaa;
+    --color-syntax-attribute: #eec12f;
+    --color-syntax-property: #83dac9;
+    --color-syntax-punctuation: #525252;
+    --color-syntax-background: #0a0a0a;
+
+    --color-fill-info: #6d9cfe;
+    --color-fill-success: #64af4c;
+    --color-fill-warning: #ffce2f;
+    --color-fill-error: #ff705d;
+    --color-on-fill-info: #171717;
+    --color-on-fill-success: #171717;
+    --color-on-fill-warning: #171717;
+    --color-on-fill-error: #171717;
+
+    --shadow-low:
+      0 2px 4px oklch(0 0 0 / 25%), 0 4px 8px oklch(0 0 0 / 40%),
+      inset 0 0 0 1px oklch(1 0 0 / 8%);
+    --shadow-med:
+      0 2px 4px oklch(0 0 0 / 35%), 0 4px 12px oklch(0 0 0 / 50%),
+      inset 0 0 0 1px oklch(1 0 0 / 12%);
+    --shadow-high:
+      0 4px 6px oklch(0 0 0 / 50%), 0 12px 24px oklch(0 0 0 / 70%),
+      inset 0 0 0 1px oklch(1 0 0 / 15%);
+  }
+}

@@ -1,14 +1,9 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Bookmark,
-  Download,
-  History,
-  Plus,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCw,
-  Search,
-  Settings,
-  Undo2,
   X,
   ZoomIn,
   ZoomOut,
@@ -17,7 +12,6 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Section } from "@astryxdesign/core/Section";
 import { Text } from "@astryxdesign/core/Text";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import type { TabId, TabInfo } from "../types";
 import AddressBar from "./AddressBar";
 
@@ -30,15 +24,11 @@ export interface NavigationBarProps {
   onStop: (id: TabId) => void;
   onZoomIn: (id: TabId) => void;
   onZoomOut: (id: TabId) => void;
-  onZoomReset: (id: TabId) => void;
-  onHardReload: (id: TabId) => void;
-  onNewTab: () => void;
-  onReopenClosed: () => void;
-  onFind: () => void;
-  onShowPage: (page: "history" | "bookmarks" | "downloads" | "settings") => void;
+  isRightSidebarOpen: boolean;
+  onToggleRightSidebar: () => void;
 }
 
-/** Navigation controls remain available without the former browser menu toolbar. */
+/** Navigation controls + right sidebar toggle. */
 export default function NavigationBar({
   tab,
   onNavigate,
@@ -48,12 +38,8 @@ export default function NavigationBar({
   onStop,
   onZoomIn,
   onZoomOut,
-  onZoomReset,
-  onHardReload,
-  onNewTab,
-  onReopenClosed,
-  onFind,
-  onShowPage,
+  isRightSidebarOpen,
+  onToggleRightSidebar,
 }: NavigationBarProps) {
   const id = tab?.id ?? null;
 
@@ -118,24 +104,15 @@ export default function NavigationBar({
             tooltip="Zoom in (Ctrl++)"
           />
         </HStack>
-        <MoreMenu
+        <IconButton
           size="sm"
           variant="ghost"
-          label="Rowster menu"
-          items={[
-            { label: "New tab", icon: <Plus size={14} />, onClick: onNewTab },
-            { label: "Reopen closed tab", icon: <Undo2 size={14} />, onClick: onReopenClosed },
-            { type: "divider" },
-            { label: "Find in page", icon: <Search size={14} />, onClick: onFind, isDisabled: !tab || tab.is_new },
-            { label: "History", icon: <History size={14} />, onClick: () => onShowPage("history") },
-            { label: "Bookmarks", icon: <Bookmark size={14} />, onClick: () => onShowPage("bookmarks") },
-            { label: "Downloads", icon: <Download size={14} />, onClick: () => onShowPage("downloads") },
-            { type: "divider" },
-            { label: "Hard reload", icon: <RotateCw size={14} />, isDisabled: !tab, onClick: () => id !== null && onHardReload(id) },
-            { label: "Reset zoom", isDisabled: !tab || tab.zoom === 1, onClick: () => id !== null && onZoomReset(id) },
-            { type: "divider" },
-            { label: "Settings", icon: <Settings size={14} />, onClick: () => onShowPage("settings") },
-          ]}
+          label={isRightSidebarOpen ? "Close sidebar" : "Open sidebar"}
+          icon={
+            isRightSidebarOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />
+          }
+          onClick={onToggleRightSidebar}
+          tooltip={isRightSidebarOpen ? "Close sidebar" : "Open sidebar"}
         />
       </HStack>
     </Section>
