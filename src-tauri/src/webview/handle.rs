@@ -61,7 +61,7 @@ impl WebviewHandle for LiveWebview {
         }
         #[cfg(target_os = "linux")]
         {
-            use webkit2gtk::WebViewExt;
+            use webkit2gtk::traits::WebViewExt;
             let webview = self.webview.clone();
             webview.with_webview(|platform| {
                 platform.inner().reload_bypass_cache();
@@ -108,10 +108,10 @@ impl WebviewHandle for LiveWebview {
         }
         #[cfg(target_os = "linux")]
         {
-            use webkit2gtk::WebViewExt;
+            use webkit2gtk::traits::WebViewExt;
             let webview = self.webview.clone();
             webview.with_webview(move |platform| {
-                platform.inner().set_muted(muted);
+                platform.inner().set_is_muted(muted);
             })?;
             return Ok(());
         }

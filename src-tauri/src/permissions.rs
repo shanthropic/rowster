@@ -235,7 +235,8 @@ fn handle_webview2_permission(
 
 #[cfg(target_os = "linux")]
 fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Result<()> {
-    use webkit2gtk::prelude::WebViewExt;
+    use webkit2gtk::glib::object::Cast;
+    use webkit2gtk::traits::{PermissionRequestExt, UserMediaPermissionRequestExt, WebViewExt};
 
     let state = app.state::<AppState>();
     let tabs = state.tabs.clone();
@@ -245,17 +246,25 @@ fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Re
 
     webview.with_webview(move |platform| {
         let view = platform.inner();
-        view.connect_permission_request(Some(move |_view, request| {
-            let name = request.permission_name();
-            let kind = match name {
-                "camera" => Some(PermissionKind::Camera),
-                "microphone" => Some(PermissionKind::Microphone),
-                "geolocation" => Some(PermissionKind::Geolocation),
-                "notifications" => Some(PermissionKind::Notifications),
-                _ => None,
+        view.connect_permission_request(move |_view, request| {
+            let kind = if request.is::<webkit2gtk::GeolocationPermissionRequest>() {
+                Some(PermissionKind::Geolocation)
+            } else if let Ok(media) = request
+                .clone()
+                .downcast::<webkit2gtk::UserMediaPermissionRequest>()
+            {
+                if media.is_for_audio_device() {
+                    Some(PermissionKind::Microphone)
+                } else {
+                    Some(PermissionKind::Camera)
+                }
+            } else if request.is::<webkit2gtk::NotificationPermissionRequest>() {
+                Some(PermissionKind::Notifications)
+            } else {
+                None
             };
             let Some(kind) = kind else {
-                return true;
+                return false;
             };
             // WebKitGTK does not expose the requesting origin; the tab's
             // current URL is the best approximation at request time.
@@ -271,7 +280,7 @@ fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Re
                 Resolve::Allow => request.allow(),
                 _ => {
                     let _ = events::emit_to_chrome(
-                        app,
+                        &app,
                         events::EV_PERMISSION_REQUESTED,
                         PermissionRequestedPayload {
                             tab_id,
@@ -283,9 +292,8 @@ fn install_linux(app: &AppHandle, tab_id: TabId, webview: &tauri::Webview) -> Re
                 }
             }
             true
-        }));
+        });
         log::debug!("hooked WebKitGTK permission requests for tab {tab_id}");
-        Ok(())
     })?;
     Ok(())
 }
