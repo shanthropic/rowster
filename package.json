@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@astryxdesign/cli": "^0.2.0",
-    "@astryxdesign/core": "^0.2.0",
+    "@astryxdesign/core": "^0.3.0",
     "@astryxdesign/theme-neutral": "^0.2.0",
     "@stylexjs/stylex": "^0.19.0",
     "@tauri-apps/api": "^2.11.1",
