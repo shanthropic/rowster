@@ -10,7 +10,7 @@ name = "rowster_lib"
 [dependencies]
 log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tauri = { version = "2", features = ["unstable", "devtools", "test"] }
@@ -20,7 +20,7 @@ tauri-plugin-log = "2.9.0"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-single-instance = "2.4.3"
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
