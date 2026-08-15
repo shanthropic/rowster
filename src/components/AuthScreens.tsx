@@ -1,8 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Compass, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -10,7 +8,6 @@ import { Section } from "@astryxdesign/core/Section";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AuthStatus } from "../types";
 import {
@@ -67,7 +64,13 @@ export default function AuthScreens({
               title="Rowster could not check sign-in"
               description={loadError}
             />
-            <Button label="Try again" variant="primary" onClick={onRetry} />
+            <button
+              type="button"
+              className="material-auth-btn"
+              onClick={onRetry}
+            >
+              <span>Try again</span>
+            </button>
           </VStack>
         </Center>
       </AuthShell>
@@ -110,8 +113,6 @@ function OnboardingScreen({ status, onAuthenticated }: FlowProps) {
     void authCompleteOnboarding(name.trim(), selectedPassword, enablePasskey)
       .then(onAuthenticated)
       .catch(async (reason: unknown) => {
-        // Authentication may have committed even if browser startup hit a
-        // recoverable engine error. Re-read Rust state instead of replaying setup.
         try {
           const current = await authStatus();
           if (current.phase === "unlocked") {
@@ -119,7 +120,7 @@ function OnboardingScreen({ status, onAuthenticated }: FlowProps) {
             return;
           }
         } catch {
-          // Preserve the original, more useful operation error below.
+          // Preserve the original error.
         }
         setError(String(reason));
       })
@@ -141,131 +142,196 @@ function OnboardingScreen({ status, onAuthenticated }: FlowProps) {
 
   return (
     <AuthShell>
-      <Center height="100%" padding={6}>
-        <Card maxWidth={480} width="100%" padding={8} elevation="low">
-          <VStack gap={5} align="start">
-            <VStack gap={2} align="start">
-              <Text type="supporting" color="secondary">
-                {step === "name" ? "Step 1 of 3" : step === "password" ? "Step 2 of 3" : "Step 3 of 3"}
-              </Text>
-              <Heading level={1}>
-                {step === "name"
-                  ? "Welcome to Rowster"
-                  : step === "password"
-                    ? "Protect your browser"
-                    : "Use your device passkey"}
-              </Heading>
-              <Text type="body" color="secondary">
-                {step === "name"
-                  ? "Tell us what to call you on the New Tab and welcome screens."
-                  : step === "password"
-                    ? "A password protects your tabs and browser data whenever Rowster starts."
-                    : "Windows Hello can unlock Rowster with your device PIN, face, or fingerprint."}
-              </Text>
-            </VStack>
+      <div className="onboarding-shell">
+        <div className="onboarding-card">
+          <HStack justify="between" align="center">
+            <div className="onboarding-brand-icon">
+              <Compass size={22} aria-hidden="true" />
+            </div>
+            <div className="onboarding-step-pills" aria-label="Setup progress">
+              <div
+                className={`onboarding-step-pill ${
+                  step === "name" || step === "password" || step === "passkey"
+                    ? "active"
+                    : ""
+                }`}
+              />
+              <div
+                className={`onboarding-step-pill ${
+                  step === "password" || step === "passkey" ? "active" : ""
+                }`}
+              />
+              <div
+                className={`onboarding-step-pill ${
+                  step === "passkey" ? "active" : ""
+                }`}
+              />
+            </div>
+          </HStack>
 
-            {error ? (
-              <Banner status="error" title="Could not continue" description={error} />
-            ) : null}
-
-            {step === "name" ? (
-              <form
-                className="auth-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (name.trim()) setStep("password");
-                }}
-              >
-                <VStack gap={4} align="stretch">
-                  <TextInput
-                    label="Your name"
-                    value={name}
-                    onChange={setName}
-                    hasAutoFocus
-                    isRequired
-                    placeholder="How should Rowster greet you?"
-                  />
-                  <Button
-                    type="submit"
-                    label="Continue"
-                    variant="primary"
-                    width="100%"
-                    isDisabled={!name.trim()}
-                  />
-                </VStack>
-              </form>
-            ) : step === "password" ? (
-              <form
-                className="auth-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  continueFromPassword();
-                }}
-              >
-                <VStack gap={4} align="stretch">
-                  <TextInput
-                    type="password"
-                    label="Create password"
-                    value={password}
-                    onChange={setPassword}
-                    hasAutoFocus
-                    description="Use at least 8 characters. Rowster stores only an Argon2id hash."
-                  />
-                  <TextInput
-                    type="password"
-                    label="Confirm password"
-                    value={confirmation}
-                    onChange={setConfirmation}
-                  />
-                  <Button
-                    type="submit"
-                    label="Create password"
-                    variant="primary"
-                    width="100%"
-                  />
-                  <Button
-                    label="Skip password"
-                    variant="ghost"
-                    width="100%"
-                    isLoading={busy}
-                    onClick={() => complete(false, null)}
-                  />
-                </VStack>
-              </form>
-            ) : (
-              <VStack gap={4} align="stretch" className="auth-form">
-                <Section variant="muted" padding={4}>
-                  <HStack gap={3} align="center">
-                    <ShieldCheck aria-hidden="true" />
-                    <VStack gap={1} align="start">
-                      <Text type="label">Native device verification</Text>
-                      <Text type="supporting" color="secondary">
-                        Your biometric data and device credential stay with the operating system.
-                      </Text>
-                    </VStack>
-                  </HStack>
-                </Section>
-                <Button
-                  label={status.passkey_available ? "Set up passkey" : "Passkey unavailable"}
-                  variant="primary"
-                  width="100%"
-                  icon={<KeyRound size={18} />}
-                  isDisabled={!status.passkey_available}
-                  isLoading={busy}
-                  onClick={() => complete(true, password)}
-                />
-                <Button
-                  label="Skip passkey"
-                  variant="ghost"
-                  width="100%"
-                  isDisabled={busy}
-                  onClick={() => complete(false, password)}
-                />
-              </VStack>
-            )}
+          <VStack gap={2} align="start">
+            <Text type="supporting" color="secondary">
+              {step === "name"
+                ? "Step 1 of 3: Profile"
+                : step === "password"
+                ? "Step 2 of 3: Security"
+                : "Step 3 of 3: Device Passkey"}
+            </Text>
+            <Heading level={2}>
+              {step === "name"
+                ? "Welcome to Rowster"
+                : step === "password"
+                ? "Protect your browser"
+                : "Fast device unlock"}
+            </Heading>
+            <Text type="body" color="secondary">
+              {step === "name"
+                ? "Tell us what to call you on the New Tab and welcome screens."
+                : step === "password"
+                ? "A master password secures your tabs, history, and browser data."
+                : "Windows Hello unlocks Rowster quickly using your device PIN, face, or fingerprint."}
+            </Text>
           </VStack>
-        </Card>
-      </Center>
+
+          {error ? (
+            <Banner
+              status="error"
+              title="Could not continue"
+              description={error}
+              isDismissable
+              onDismiss={() => setError(null)}
+            />
+          ) : null}
+
+          {step === "name" ? (
+            <form
+              className="material-auth-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (name.trim()) setStep("password");
+              }}
+            >
+              <div className="material-auth-capsule">
+                <input
+                  type="text"
+                  className="material-auth-input"
+                  placeholder="How should Rowster greet you?"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoFocus
+                  required
+                  spellCheck={false}
+                />
+                <button
+                  type="submit"
+                  className="material-auth-btn"
+                  disabled={!name.trim()}
+                >
+                  <span>Continue</span>
+                </button>
+              </div>
+            </form>
+          ) : step === "password" ? (
+            <form
+              className="material-auth-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                continueFromPassword();
+              }}
+            >
+              <VStack gap={3} align="stretch">
+                <div className="material-auth-capsule">
+                  <input
+                    type="password"
+                    className="material-auth-input"
+                    placeholder="Create password (min 8 characters)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="material-auth-capsule">
+                  <input
+                    type="password"
+                    className="material-auth-input"
+                    placeholder="Confirm your password"
+                    value={confirmation}
+                    onChange={(e) => setConfirmation(e.target.value)}
+                  />
+                </div>
+                <HStack gap={3} align="center">
+                  <button
+                    type="submit"
+                    className="material-auth-btn"
+                    style={{ flex: 1, height: 48 }}
+                    disabled={!password || !confirmation}
+                  >
+                    <span>Create password</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="material-auth-toggle-btn"
+                    style={{ height: 48, padding: "0 var(--spacing-4)" }}
+                    onClick={() => complete(false, null)}
+                    disabled={busy}
+                  >
+                    <span>Skip password</span>
+                  </button>
+                </HStack>
+              </VStack>
+            </form>
+          ) : (
+            <VStack gap={4} align="stretch" className="material-auth-form">
+              <Section
+                variant="muted"
+                padding={4}
+                style={{ borderRadius: "var(--radius-lg)" }}
+              >
+                <HStack gap={3} align="center">
+                  <ShieldCheck
+                    size={20}
+                    color="var(--color-text-cyan)"
+                    aria-hidden="true"
+                  />
+                  <VStack gap={1} align="start">
+                    <Text type="label">Native Windows Hello</Text>
+                    <Text type="supporting" color="secondary">
+                      Your credentials and biometric templates stay safely protected in the operating system.
+                    </Text>
+                  </VStack>
+                </HStack>
+              </Section>
+              <HStack gap={3} align="center">
+                <button
+                  type="button"
+                  className="material-auth-btn"
+                  style={{ flex: 1, height: 48 }}
+                  disabled={!status.passkey_available || busy}
+                  onClick={() => complete(true, password)}
+                >
+                  <KeyRound size={18} aria-hidden="true" />
+                  <span>
+                    {status.passkey_available
+                      ? busy
+                        ? "Setting up..."
+                        : "Set up passkey"
+                      : "Passkey unavailable"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="material-auth-toggle-btn"
+                  style={{ height: 48, padding: "0 var(--spacing-4)" }}
+                  onClick={() => complete(false, password)}
+                  disabled={busy}
+                >
+                  <span>Skip passkey</span>
+                </button>
+              </HStack>
+            </VStack>
+          )}
+        </div>
+      </div>
     </AuthShell>
   );
 }
@@ -301,92 +367,104 @@ function UnlockScreen({ status, onAuthenticated }: FlowProps) {
     if (password) runUnlock(authUnlockPassword(password));
   };
 
+  const userName = status.name?.trim() || "there";
+
   return (
     <AuthShell>
-      <Section variant="transparent" padding={0} className="auth-unlock-viewport">
-        <Center height="100%" width="100%" padding={6}>
-          <HStack gap={10} align="center" justify="center" wrap="wrap" className="auth-unlock-layout">
-            <MaterialClock userName={status.name ?? "there"} />
-            <Card width={440} maxWidth="100%" padding={8} elevation="low">
-              <VStack gap={5} align="stretch">
-                <VStack gap={2} align="start">
-                  <Heading level={1}>Welcome back</Heading>
-                  <Text type="body" color="secondary">
-                    Sign in to restore your tabs and open your browser data.
-                  </Text>
-                </VStack>
-                {error ? (
-                  <Banner
-                    status="error"
-                    title="Rowster stayed locked"
-                    description={error}
+      <div className="auth-viewport">
+        <div className="auth-hero-container">
+          {/* Left Column: Material Clock Widget with contextual Welcome Back greeting */}
+          <MaterialClock
+            userName={userName}
+            greeting={`Welcome back, ${userName}`}
+          />
+
+          {/* Right Column: Material You Authentication Area matching New Tab Search Bar */}
+          <div className="material-auth-area">
+            <div className="material-auth-header">
+              <p className="material-auth-subtitle">
+                Sign in to restore your tabs and open your browser data.
+              </p>
+            </div>
+
+            {error ? (
+              <Banner
+                status="error"
+                title="Rowster stayed locked"
+                description={error}
+                isDismissable
+                onDismiss={() => setError(null)}
+              />
+            ) : null}
+
+            {!usePassword && status.passkey_configured ? (
+              <div className="material-auth-form">
+                <button
+                  type="button"
+                  className="material-passkey-card-btn primary"
+                  onClick={() => runUnlock(authUnlockPasskey())}
+                  disabled={busy}
+                >
+                  <KeyRound size={20} aria-hidden="true" />
+                  <span>
+                    {busy ? "Verifying passkey..." : "Unlock with passkey"}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="material-auth-toggle-btn"
+                  onClick={() => {
+                    setError(null);
+                    setUsePassword(true);
+                  }}
+                  disabled={busy}
+                >
+                  <LockKeyhole size={14} aria-hidden="true" />
+                  <span>Use master password instead</span>
+                </button>
+              </div>
+            ) : (
+              <form className="material-auth-form" onSubmit={submitPassword}>
+                <div className="material-auth-capsule">
+                  <div className="material-auth-icon">
+                    <LockKeyhole size={18} aria-hidden="true" />
+                  </div>
+                  <input
+                    type="password"
+                    className="material-auth-input"
+                    placeholder="Enter master password..."
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoFocus
+                    disabled={busy}
                   />
+                  <button
+                    type="submit"
+                    className="material-auth-btn"
+                    disabled={!password || busy}
+                  >
+                    <span>{busy ? "Unlocking..." : "Unlock"}</span>
+                  </button>
+                </div>
+                {status.passkey_configured ? (
+                  <button
+                    type="button"
+                    className="material-auth-toggle-btn"
+                    onClick={() => {
+                      setError(null);
+                      setUsePassword(false);
+                    }}
+                    disabled={busy}
+                  >
+                    <KeyRound size={14} aria-hidden="true" />
+                    <span>Use device passkey instead</span>
+                  </button>
                 ) : null}
-                {!usePassword && status.passkey_configured ? (
-                  <VStack gap={3} align="stretch">
-                    <Button
-                      label="Unlock with passkey"
-                      variant="primary"
-                      size="lg"
-                      width="100%"
-                      icon={<KeyRound size={20} />}
-                      isLoading={busy}
-                      onClick={() => runUnlock(authUnlockPasskey())}
-                    />
-                    <Button
-                      label="Use password instead"
-                      variant="ghost"
-                      size="sm"
-                      width="100%"
-                      isDisabled={busy}
-                      onClick={() => {
-                        setError(null);
-                        setUsePassword(true);
-                      }}
-                    />
-                  </VStack>
-                ) : (
-                  <form className="auth-form" onSubmit={submitPassword}>
-                    <VStack gap={4} align="stretch">
-                      <TextInput
-                        type="password"
-                        label="Password"
-                        value={password}
-                        onChange={setPassword}
-                        hasAutoFocus
-                        startIcon="lock"
-                      />
-                      <Button
-                        type="submit"
-                        label="Unlock Rowster"
-                        variant="primary"
-                        size="lg"
-                        width="100%"
-                        icon={<LockKeyhole size={20} />}
-                        isDisabled={!password}
-                        isLoading={busy}
-                      />
-                      {status.passkey_configured ? (
-                        <Button
-                          label="Use passkey instead"
-                          variant="ghost"
-                          size="sm"
-                          width="100%"
-                          isDisabled={busy}
-                          onClick={() => {
-                            setError(null);
-                            setUsePassword(false);
-                          }}
-                        />
-                      ) : null}
-                    </VStack>
-                  </form>
-                )}
-              </VStack>
-            </Card>
-          </HStack>
-        </Center>
-      </Section>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
     </AuthShell>
   );
 }
