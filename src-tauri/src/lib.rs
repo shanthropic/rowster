@@ -1,5 +1,6 @@
 mod address;
 mod app;
+mod auth;
 mod commands;
 mod db;
 mod downloads;

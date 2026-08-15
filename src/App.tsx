@@ -58,6 +58,7 @@ import type {
   PermissionRequested,
   PermissionDecision,
   SettingsPatch,
+  AuthStatus,
   TabLayout,
 } from "./types";
 import { activeTabOf, useBrowserState } from "./state";
@@ -67,7 +68,12 @@ const HistoryPage = lazy(() => import("./pages/HistoryPage"));
 const BookmarksPage = lazy(() => import("./pages/BookmarksPage"));
 const DownloadsPage = lazy(() => import("./pages/DownloadsPage"));
 
-export default function App() {
+interface AppProps {
+  auth: AuthStatus;
+  onAuthChange: (status: AuthStatus) => void;
+}
+
+export default function App({ auth, onAuthChange }: AppProps) {
   const state = useBrowserState();
   const activeTab = activeTabOf(state);
   const activeId = activeTab?.id ?? null;
@@ -515,7 +521,11 @@ export default function App() {
                 }
               >
                 {activeTab?.chrome_page === "settings" ? (
-                  <SettingsPage onClose={() => runCommand("Close settings", showChromePage(null))} />
+                  <SettingsPage
+                    auth={auth}
+                    onAuthChange={onAuthChange}
+                    onClose={() => runCommand("Close settings", showChromePage(null))}
+                  />
                 ) : activeTab?.chrome_page === "history" ? (
                   <HistoryPage
                     onClose={() => runCommand("Close history", showChromePage(null))}
@@ -529,7 +539,7 @@ export default function App() {
                 ) : activeTab?.chrome_page === "downloads" ? (
                   <DownloadsPage onClose={() => runCommand("Close downloads", showChromePage(null))} />
                 ) : activeTab?.is_new ? (
-                  <NewTabPage onNavigate={handleNavigate} />
+                  <NewTabPage userName={auth.name ?? "there"} onNavigate={handleNavigate} />
                 ) : null}
               </Suspense>
             </StackItem>

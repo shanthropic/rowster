@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use crate::auth::AuthManager;
 use crate::db::Db;
 use crate::favicons::FaviconCache;
 use crate::find::FindBroker;
@@ -15,6 +16,11 @@ use crate::tabs::TabManager;
 /// database, default settings, and a disabled session saver.
 #[derive(Clone, Default)]
 pub struct AppState {
+    /// Authoritative authentication state. Protected commands must check this
+    /// before touching tabs, settings, session state, or the database.
+    pub auth: AuthManager,
+    /// Prevents duplicate startup/session restoration after authentication.
+    pub browser_started: Arc<std::sync::Mutex<bool>>,
     pub tabs: TabManager,
     pub db: Arc<Db>,
     /// Canonical settings, kept in memory and persisted through `repos`.

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download as DownloadIcon, FolderOpen, RotateCw, Trash2, X, XCircle } from "lucide-react";
-import { Heading } from "@astryxdesign/core/Heading";
+import { Download as DownloadIcon, FolderOpen, RotateCw, Trash2, XCircle } from "lucide-react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { Divider } from "@astryxdesign/core/Divider";
+import { Token } from "@astryxdesign/core/Token";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -21,6 +20,7 @@ import {
   runCommand,
 } from "../ipc";
 import type { Download } from "../types";
+import BrowserPage, { BrowserPageLoading } from "../components/BrowserPage";
 
 export interface DownloadsPageProps {
   onClose: () => void;
@@ -39,6 +39,13 @@ function statusLabel(status: Download["status"]): string {
     case "failed":
       return "Failed";
   }
+}
+
+function statusColor(status: Download["status"]): "gray" | "blue" | "green" | "red" {
+  if (status === "completed") return "green";
+  if (status === "active" || status === "requested") return "blue";
+  if (status === "failed") return "red";
+  return "gray";
 }
 
 export default function DownloadsPage({ onClose }: DownloadsPageProps) {
@@ -67,11 +74,11 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
   const isEmpty = downloads !== null && downloads.length === 0;
 
   return (
-    <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
-        <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
-          <Heading level={2}>Downloads</Heading>
-          <HStack gap={2} align="center">
+    <BrowserPage
+      title="Downloads"
+      closeLabel="Close downloads"
+      onClose={onClose}
+      actions={
             <IconButton
               size="sm"
               variant="ghost"
@@ -80,12 +87,11 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
               onClick={() => runCommand("Clear downloads", downloadClear().then(refresh))}
               tooltip="Clear finished downloads"
             />
-            <IconButton size="sm" variant="ghost" label="Close downloads" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
-          </HStack>
-        </HStack>
-        <Divider />
-
-        {downloads === null ? null : isEmpty ? (
+      }
+    >
+        {downloads === null ? (
+          <BrowserPageLoading label="Loading downloads" />
+        ) : isEmpty ? (
           <EmptyState
             title="No downloads"
             description="Files you download will show up here."
@@ -104,9 +110,16 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
                 label={download.filename}
                 description={
                   <VStack gap={1}>
-                    <Text type="supporting" size="sm">
-                      {statusLabel(download.status)} · {download.url}
-                    </Text>
+                    <HStack gap={2} align="center" wrap="wrap">
+                      <Token
+                        label={statusLabel(download.status)}
+                        color={statusColor(download.status)}
+                        size="sm"
+                      />
+                      <Text type="supporting" size="sm">
+                        {download.url}
+                      </Text>
+                    </HStack>
                     {inProgress ? (
                       <ProgressBar
                         label={`Progress of ${download.filename}`}
@@ -181,7 +194,6 @@ export default function DownloadsPage({ onClose }: DownloadsPageProps) {
           engines do not expose byte-level progress through Tauri in v1. Rows
           remain visible until the engine reports completion or cancellation.
         </Text>
-      </VStack>
-    </VStack>
+    </BrowserPage>
   );
 }

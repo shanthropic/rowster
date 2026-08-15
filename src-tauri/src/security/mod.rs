@@ -83,4 +83,39 @@ mod tests {
         }
         assert!(found > 0, "no #[tauri::command] functions found to scan");
     }
+
+    /// All commands except the four operations needed to enter the app must
+    /// enforce the Rust-owned authentication barrier.
+    #[test]
+    fn every_protected_command_is_auth_guarded() {
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let source =
+            std::fs::read_to_string(std::path::Path::new(&manifest).join("src/commands.rs"))
+                .expect("src/commands.rs must exist");
+        let public_while_locked = [
+            "fn auth_status(",
+            "fn auth_complete_onboarding(",
+            "fn auth_unlock_password(",
+            "fn auth_unlock_passkey(",
+        ];
+
+        let marker = "#[tauri::command]";
+        let mut start = 0;
+        while let Some(relative) = source[start..].find(marker) {
+            let item_start = start + relative;
+            let rest = &source[item_start + marker.len()..];
+            let next = rest
+                .find(marker)
+                .map(|index| item_start + marker.len() + index)
+                .unwrap_or(source.len());
+            let item = &source[item_start..next];
+            if !public_while_locked.iter().any(|name| item.contains(name)) {
+                assert!(
+                    item.contains("auth.require_unlocked"),
+                    "protected command between chars {item_start}..{next} is missing the authentication guard"
+                );
+            }
+            start = next;
+        }
+    }
 }

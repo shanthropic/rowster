@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { History as HistoryIcon, Search, Trash2, X } from "lucide-react";
-import { Heading } from "@astryxdesign/core/Heading";
-import { VStack } from "@astryxdesign/core/VStack";
+import { History as HistoryIcon, Search, Trash2 } from "lucide-react";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
-import { Divider } from "@astryxdesign/core/Divider";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { historyClear, historyDelete, historyQuery, runCommand } from "../ipc";
 import type { HistoryEntry } from "../types";
+import BrowserPage, { BrowserPageLoading } from "../components/BrowserPage";
 
 export interface HistoryPageProps {
   onClose: () => void;
@@ -76,11 +74,11 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
   const isEmpty = entries !== null && entries.length === 0;
 
   return (
-    <VStack gap={4} align="center" style={{ height: "100%", overflowY: "auto", padding: "var(--spacing-8)" }}>
-      <VStack gap={4} align="start" style={{ width: "min(100%, calc(var(--spacing-12) * 20))" }}>
-        <HStack gap={3} align="center" justify="between" style={{ width: "100%" }}>
-          <Heading level={2}>History</Heading>
-          <HStack gap={2} align="center">
+    <BrowserPage
+      title="History"
+      closeLabel="Close history"
+      onClose={onClose}
+      actions={
             <IconButton
               size="sm"
               variant={confirmingClear ? "destructive" : "ghost"}
@@ -89,10 +87,8 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
               onClick={onClear}
               tooltip={confirmingClear ? "Click again to confirm" : "Clear all history"}
             />
-            <IconButton size="sm" variant="ghost" label="Close history" icon={<X size={16} />} onClick={onClose} tooltip="Close (Esc)" />
-          </HStack>
-        </HStack>
-        <Divider />
+      }
+    >
         <TextInput
           label="Search history"
           isLabelHidden
@@ -101,10 +97,12 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
           placeholder="Search history"
           startIcon={<Search size={16} />}
           hasClear
-          style={{ width: "100%" }}
+          width="100%"
         />
 
-        {entries === null ? null : isEmpty ? (
+        {entries === null ? (
+          <BrowserPageLoading label="Loading history" />
+        ) : isEmpty ? (
           <EmptyState
             title="No history"
             description={query ? "No visits match your search." : "Pages you visit will show up here."}
@@ -139,7 +137,6 @@ export default function HistoryPage({ onClose, onNavigate }: HistoryPageProps) {
             ))}
           </List>
         )}
-      </VStack>
-    </VStack>
+    </BrowserPage>
   );
 }

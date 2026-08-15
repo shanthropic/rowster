@@ -2,6 +2,17 @@
 
 export type TabId = number;
 
+export type AuthPhase = "onboarding" | "locked" | "unlocked";
+
+export interface AuthStatus {
+  phase: AuthPhase;
+  name: string | null;
+  password_configured: boolean;
+  passkey_configured: boolean;
+  passkey_available: boolean;
+  retry_after_ms: number;
+}
+
 /** Mirrors ChromePage in src-tauri/src/model.rs. */
 export type ChromePage = "settings" | "history" | "bookmarks" | "downloads";
 

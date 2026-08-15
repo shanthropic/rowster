@@ -16,6 +16,12 @@ pub enum Error {
     NavigationBlocked(String),
     #[error("untrusted caller (webview `{0}` is not the chrome)")]
     UntrustedCaller(String),
+    #[error("authentication required")]
+    AuthenticationRequired,
+    #[error("authentication setup is required")]
+    OnboardingRequired,
+    #[error("authentication failed")]
+    AuthenticationFailed,
     #[error("internal state poisoned")]
     StatePoisoned,
     #[error("io error: {0}")]
