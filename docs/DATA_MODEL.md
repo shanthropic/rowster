@@ -1,18 +1,45 @@
 # Rowster — Data Model
 
-## SQLite database
+---
 
-Location: app-data dir (`rowster.db`), WAL mode. Schema is versioned via `PRAGMA user_version` and applied by ordered migrations in `src-tauri/src/db/migrations.rs`. **Never edit an applied migration; append a new one.**
+## Authentication Profile (`auth.json`)
+
+Location: app-data directory (`auth.json`).
+
+Stores the master authentication profile for the browser instance. Handled by `src-tauri/src/auth.rs`.
+
+### Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `version` | `u32` | Schema version (currently `1`) |
+| `name` | `string` | User display name (1–80 printable characters) |
+| `password_hash` | `string` \| `null` | PHC-formatted Argon2id password hash |
+| `passkey_enabled` | `bool` | Flag indicating whether native biometric / passkey unlock is enabled |
+
+### Write Protocol & Persistence Security
+
+1. Profile serialized to JSON in memory.
+2. Written to temporary file `auth.json.tmp`.
+3. File synced to disk via `sync_all()`.
+4. Strict private permissions applied (mode `0600` on POSIX systems).
+5. Atomic replacement onto `auth.json` (via atomic rename on POSIX, `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` on Windows).
+
+---
+
+## SQLite Database (`rowster.db`)
+
+Location: app-data directory (`rowster.db`), running in Write-Ahead Logging (WAL) mode. Schema migrations are strictly ordered and tracked using `PRAGMA user_version` in `src-tauri/src/db/migrations.rs`.
 
 ### `history`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | INTEGER PK | |
-| url | TEXT NOT NULL | |
-| title | TEXT | nullable |
-| visit_time | INTEGER NOT NULL | Unix epoch seconds |
-| domain | TEXT | denormalized for frequent-site grouping |
+| `id` | `INTEGER PRIMARY KEY` | Auto-incrementing identifier |
+| `url` | `TEXT NOT NULL` | Visited URL string |
+| `title` | `TEXT` | Document title (nullable) |
+| `visit_time` | `INTEGER NOT NULL` | Visit timestamp in Unix epoch seconds |
+| `domain` | `TEXT` | Extracted domain for 90-day frequent-site ranking |
 
 Indexes: `(visit_time)`, `(domain, visit_time)`.
 
@@ -20,79 +47,83 @@ Indexes: `(visit_time)`, `(domain, visit_time)`.
 
 | Column | Type | Notes |
 |---|---|---|
-| id | INTEGER PK | |
-| parent_id | INTEGER | self-FK, `ON DELETE CASCADE` (folder tree) |
-| title | TEXT NOT NULL | |
-| url | TEXT | nullable (folders) |
-| position | INTEGER NOT NULL DEFAULT 0 | |
-| created_at | INTEGER NOT NULL | |
+| `id` | `INTEGER PRIMARY KEY` | Auto-incrementing identifier |
+| `parent_id` | `INTEGER` | Parent folder ID (self-referential FK with `ON DELETE CASCADE`) |
+| `title` | `TEXT NOT NULL` | Bookmark display title |
+| `url` | `TEXT` | Bookmark destination URL (nullable for folder nodes) |
+| `position` | `INTEGER NOT NULL DEFAULT 0` | Ordering index within the parent container |
+| `created_at` | `INTEGER NOT NULL` | Creation timestamp in Unix epoch seconds |
 
-Deduplication on add is by URL, scoped to folders.
+Deduplication on insertion is scoped by URL within each folder.
 
 ### `downloads`
 
 | Column | Type | Notes |
 |---|---|---|
-| id | INTEGER PK | |
-| tab_id | INTEGER | originating tab, nullable |
-| url | TEXT NOT NULL | |
-| filename | TEXT NOT NULL | sanitized |
-| path | TEXT | final destination, nullable (prompt rows hold none) |
-| mime | TEXT | |
-| total_bytes | INTEGER | nullable until known |
-| received_bytes | INTEGER NOT NULL DEFAULT 0 | |
-| status | TEXT NOT NULL | `requested` \| `active` \| `completed` \| `cancelled` \| `failed` |
-| error | TEXT | |
-| created_at | INTEGER NOT NULL | |
-| finished_at | INTEGER | |
-
-State machine: ask-before rows start `requested`; engine acceptance flips them to `active` with the destination path (no duplicate history entry); completion/cancel/failure are terminal via `finish()`.
+| `id` | `INTEGER PRIMARY KEY` | Auto-incrementing identifier |
+| `tab_id` | `INTEGER` | Originating tab identifier (nullable) |
+| `url` | `TEXT NOT NULL` | Source download URL |
+| `filename` | `TEXT NOT NULL` | Sanitized destination filename |
+| `path` | `TEXT` | Absolute destination path on disk (nullable during prompt stage) |
+| `mime` | `TEXT` | Content MIME type |
+| `total_bytes` | `INTEGER` | Total file size in bytes (nullable if unknown) |
+| `received_bytes` | `INTEGER NOT NULL DEFAULT 0` | Current bytes received count |
+| `status` | `TEXT NOT NULL` | Status state: `requested`, `active`, `completed`, `cancelled`, `failed` |
+| `error` | `TEXT` | Error description if download failed |
+| `created_at` | `INTEGER NOT NULL` | Download start timestamp in Unix epoch seconds |
+| `finished_at` | `INTEGER` | Completion timestamp in Unix epoch seconds |
 
 ### `site_permissions`
 
 | Column | Type | Notes |
 |---|---|---|
-| origin | TEXT NOT NULL | canonical `scheme://host[:port]` |
-| kind | TEXT NOT NULL | `camera` \| `microphone` \| `geolocation` \| `notifications` |
-| decision | TEXT NOT NULL | `allow_once` is never persisted; `always_allow` \| `block` |
+| `origin` | `TEXT NOT NULL` | Canonical origin string (`scheme://host[:port]`) |
+| `kind` | `TEXT NOT NULL` | Permission type: `camera`, `microphone`, `geolocation`, `notifications` |
+| `decision` | `TEXT NOT NULL` | Stored decision: `always_allow`, `block` (`allow_once` is transient) |
 
-PK `(origin, kind)`. Rows with unknown kind/decision strings are skipped on read; DB errors propagate.
+Primary Key: `(origin, kind)`.
 
 ### `settings`
 
-Key/value with an in-memory validated `Settings` mirror (`src-tauri/src/settings.rs`):
+Key-value store synchronized with an in-memory validated `Settings` model (`src-tauri/src/settings.rs`):
 
-| Key | Type | Notes |
+| Key | Type | Constraints / Validation |
 |---|---|---|
-| search_engine | string | must be `https://`, must contain `{q}` |
-| home_page | string | `http(s)` or empty |
-| new_tab_behavior | enum | new_tab_page \| home \| blank |
-| restore_session | bool | startup behavior |
-| ask_before_download | bool | prompt before each download |
-| download_dir | string/None | absolute path only |
-| theme | enum | system \| light \| dark |
-| zoom_default | f64 | clamped 0.25–5.0 |
-| close_last_tab_action | enum | new_tab \| close_window |
-| history_retention_days | u32 | 0 = keep forever |
-| show_bookmark_bar | bool | |
-| tab_sleep_after_minutes | u32 | |
-| warn_on_form_tabs | bool | |
-| language | string | chrome UI language key |
+| `search_engine` | `string` | Must start with `https://` and include `{q}` placeholder |
+| `home_page` | `string` | Valid `http(s)` URL or empty string |
+| `new_tab_behavior` | `enum` | `new_tab_page`, `home`, `blank` |
+| `restore_session` | `bool` | Flag determining whether previous tabs restore on startup |
+| `ask_before_download` | `bool` | Flag prompting destination confirmation per download |
+| `download_dir` | `string` \| `null` | Valid absolute filesystem directory |
+| `theme` | `enum` | `system`, `light`, `dark` |
+| `zoom_default` | `f64` | Default page zoom level, clamped between `0.25` and `5.0` |
+| `close_last_tab_action` | `enum` | `new_tab`, `close_window` |
+| `history_retention_days` | `u32` | Number of days to retain history entries (`0` = indefinitely) |
+| `show_bookmark_bar` | `bool` | Visibility of the bookmark bar |
+| `tab_sleep_after_minutes` | `u32` | Inactivity interval in minutes before discarding tab webview |
+| `warn_on_form_tabs` | `bool` | Flag prompting confirmation when closing tabs with unsubmitted forms |
+| `language` | `string` | Chrome interface localization language key |
 
-`settings_set` validates + persists synchronously before returning; concurrent patches are serialized.
+---
 
-## Session file
+## Session File (`session.json`)
 
-`session.json` in the app-data dir (with `session.json.bak` rotation):
+Location: app-data directory (`session.json`), with automated `session.json.bak` rotation.
 
-- `version` — validated against `SESSION_VERSION`
-- `windows[].active_tab` — index into `tabs`, bounds-checked on load
-- `windows[].tabs[]` — `{ url, title, zoom, pinned, muted, navlog }` in **display order** (tab reorder persists automatically)
-- `recently_closed[]` — capped at 25, most recent first
+### Schema
 
-Write protocol: serialize → temp file → `sync_all()` → rotate live to `.bak` → rename temp to live. Load: live → on corruption/version mismatch fall back to `.bak` → on URL/zoom/active-index validation failure treat session as absent.
+- `version`: Numeric format version verified against `SESSION_VERSION`.
+- `windows[].active_tab`: Zero-based index of the currently focused tab, bounds-checked upon restoration.
+- `windows[].tabs[]`: Ordered array of tab snapshots `{ url, title, zoom, pinned, muted, navlog }`.
+- `recently_closed[]`: FIFO list of recently closed tab snapshots (capped at 25 items).
 
-## Filesystem
+---
 
-- App data dir: DB, session, favicon cache (`favicons/` keyed `<scheme>-<host>-<port>.icon`).
-- Downloads: user-selected directory; names sanitized (illegal chars, traversal, trailing dots) with ` (2)`, ` (3)`… counter deduplication.
+## Filesystem Layout
+
+- **App Data Directory**:
+  - Windows: `%APPDATA%\com.rowster.app\`
+  - Linux: `~/.config/com.rowster.app/`
+  - macOS: `~/Library/Application Support/com.rowster.app/`
+  - Contains: `auth.json`, `rowster.db`, `session.json`, `session.json.bak`, `favicons/` cache, and `rowster.log`.
+- **Downloads Directory**: User-configured directory; filenames are sanitized to remove directory traversal and invalid characters, with counter-based deduplication (` (1)`, ` (2)`).

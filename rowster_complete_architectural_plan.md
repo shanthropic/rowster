@@ -91,7 +91,7 @@ Rowster/
 │  ├─ theme/rowsterTheme.ts              # codegen theme (npm run theme:build)
 │  ├─ components/  TitleBar, TabStrip, Tab (dnd), Toolbar, AddressBar, SecurityIndicator,
 │  │               BookmarkBar, StatusBar, TabContextMenu, OverlayMenu, Favicon,
-│  │               DownloadTray, PermissionPrompt, CertInterstitial, ErrorPage
+│  │               DownloadTray, PermissionPrompt, CertInterstitial, ErrorPage, AuthScreens
 │  ├─ pages/       NewTab, History, Bookmarks, Downloads, Settings
 │  └─ styles/      chrome.css (tokens only — var(--color-*|--spacing-*|--radius-*))
 ├─ src-tauri/
@@ -101,6 +101,7 @@ Rowster/
 │  ├─ icons/                             # generated via `npx tauri icon`
 │  ├─ src/
 │  │  ├─ main.rs → lib.rs                # Builder: plugins, protocol, menu, setup, invoke_handler
+│  │  ├─ auth.rs                         # AuthManager, Argon2id, Windows Hello biometrics, auth.json
 │  │  ├─ error.rs                        # thiserror hierarchy (Error → user message + log)
 │  │  ├─ state.rs                        # AppState { Mutex<Browser>, handles, channels }
 │  │  ├─ model.rs                        # Tab, BrowserWindow, NavEntry, Download, … (serde)
@@ -338,6 +339,7 @@ Search engine (presets + custom template) · Home page · New-tab behavior (new_
 | Feature | Windows | macOS | Linux |
 |---|---|---|---|
 | Multi-tab child webviews | ✅ | ✅ | ✅ (X11); ⚠️ Wayland bounds bug → re-assert on activation + fallback mode (§21) |
+| Built-in Auth & Biometrics | ✅ (Windows Hello WinRT + Passkeys) | ⚠️ (Argon2id password unlock) | ⚠️ (Argon2id password unlock) |
 | Download decide/cancel/finished | ✅ | ✅ | ✅ |
 | Download progress (bytes/speed/ETA) | ✅ native | ⚠️ indeterminate | ✅ native |
 | Pause/resume | ❌ (documented) | ❌ | ❌ |

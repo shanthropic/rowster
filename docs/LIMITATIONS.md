@@ -1,28 +1,25 @@
 # Rowster — Known Limitations
 
-Explicitly documented behavior — everything here is a **conscious decision**, not an oversight.
+The following items document conscious architectural and platform constraints within Rowster.
 
-## Engine-level (all platforms)
+---
 
-1. **No download progress bytes.** Tauri 2.11 `DownloadEvent` exposes only `Requested` and `Finished`; there is no `Progress` variant. Native progress (WebView2 `BytesReceivedChanged`, WebKit `WebKitDownload::estimate-progress`) is **not wired in v1**. The Downloads page shows an *indeterminate* Astryx `ProgressBar` for `active`/`requested` rows, with determinate rendering reserved for when `total_bytes` is known (future native hooks).
-2. **No pause/resume.** WebView2 and WKWebView cannot pause a download; only cancel. Rowster's cancel is synchronous on the main thread (path-based bookkeeping) so re-cancel is safe.
-3. **Hard reload ≈ normal reload.** WebView2 gives no hard-reload; the menu item falls back to a normal reload. (WebKitGTK/WKWebView do support it.)
-4. **Background throttling.** Windows WebView2 does not throttle hidden webviews; only the `sleep_inactive_tabs` (discard) path reclaims memory. macOS 14+ throttles by default; Linux WebKitGTK does not throttle.
-5. **Cert interstitials** are engine-native pages. Rowster never bypasses, never auto-accepts. The Linux HTTP→HTTPS HSTS escape page also comes from the engine.
-6. **No byte-level load progress** in the address bar — spinner is load-start/load-end only (same engine limitation as downloads).
+## Engine-Level Constraints
 
-## Rowster-level
+1. **No Byte-Level Download Progress**: Tauri's core `DownloadEvent` exposes `Requested` and `Finished` events without byte increments. The Downloads page renders an indeterminate progress bar while downloads are active. Determinate progress rendering is reserved for future native platform hooks.
+2. **Download Pause / Resume**: Underlying webview engines (WebView2, WKWebView, WebKitGTK) do not expose pause/resume hooks for active downloads; cancellation is supported.
+3. **Hard Reload Behavior**: WebView2 lacks a distinct hard-reload hook; hard reload requests trigger a standard cache reload.
+4. **Background Throttling**: Windows WebView2 does not automatically throttle hidden child webviews; memory is managed via Rowster's custom tab sleeping / memory discard implementation.
+5. **Certificate Interstitials**: Certificate error handling relies on engine-native dialogs and trust stores. Rowster does not permit silent bypass of invalid certificates.
 
-7. **Chrome shortcuts while a tab webview has focus.** Tab keyboard shortcuts (Ctrl+W, Ctrl+Tab…) are handled by the chrome window's keydown listener; the webview grabs focus as soon as you click a page, so shortcuts keep working via the window-level handler — but native webview key handling (e.g. some engine shortcuts) wins first. Considered acceptable; per-engine shortcut interception is a follow-up.
-8. **Wayland child-webview positioning** (Linux only): bounds mispositioning bug tauri#15656; committed fallback re-asserts bounds on tab activation and a `linux_compat_mode` setting exists. X11 (XWayland) is unaffected.
-9. **macOS notifications unsupported** — the notification engine permission is denied by default (no prompt) because WebKitGTK/WKWebView do not expose it.
-10. **Find in page** on Windows is `window.find`-based JS (find toolbar runs chrome-side), not the native UI; case/whole-word options live in the browser FindBar.
-11. **Session granularity**: session save is debounced (~1s) and page history is capped per tab; a hard power cut loses at most the last second of tab set plus deep page history. The `.bak` file guarantees the previous session is recoverable.
-12. **Single profile.** No multi-user profile switching; the settings table and session are global to the app-data dir.
+---
 
-## Scope notes
+## Rowster Platform Behaviors
 
-- v1 is Windows-first verified; macOS/Linux compile in CI but are runtime-verified by users. See [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md).
-- No extensions system, no built-in ad blocking, no sync/account — out of scope for 0.1.0 by design.
-- `cargo audit` is manual, not yet a CI gate (see TESTING.md).
-- No e2e (tauri-driver) suite yet; security-critical paths are pinned by unit + static-scan tests instead.
+6. **Authentication & Biometrics**:
+   - **Windows**: Full biometric sign-in (Windows Hello face/fingerprint/PIN) is supported via WinRT `UserConsentVerifier`.
+   - **macOS / Linux**: Master password authentication (Argon2id) is fully supported; native Touch ID and PAM biometric integrations are planned for future releases.
+7. **Keyboard Shortcuts in Focused Webviews**: Keyboard shortcuts are processed by the chrome window's keydown listener. When a child webview holds focus, native engine keys take precedence before bubbling to the window level.
+8. **Linux Child Webview Positioning under Wayland**: Due to an upstream Wayland positioning constraint, Rowster re-asserts webview bounds upon tab activation and provides a `linux_compat_mode` setting. X11 sessions operate without constraint.
+9. **macOS Notification Permissions**: In WKWebView, desktop notifications are denied by default due to engine limitations.
+10. **Single Profile Scope**: Settings, database records, and authentication profiles are scoped to the local user's app-data directory. Multi-profile switching is out of scope for the current release.

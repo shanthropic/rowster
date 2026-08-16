@@ -1,38 +1,35 @@
-# Rowster — Readiness Checklist (v0.1.0)
+# Rowster — Readiness Checklist
 
-Status of the architectural plan's delivery phases, verified as of the last gate run.
+Status of architectural delivery phases and verification milestones.
 
-## Phase status
+---
+
+## Phase Status
 
 | Phase | Scope | Status |
 |---|---|---|
-| A — Security & correctness audit | capability ACL fix, caller guards, navlog cursor, close-neighbor bug, session atomicity + validation, overlay visibility, duplicate/close-others/close-right, settings serialization, download prompt flow, favicon origin keys + no-redirect, canonical origins, permissions error propagation, db rename guard, CSP tightening, chrome rebuild on singleton store | ✅ Done + 3 commits (`eec794d`, `ae3388e`, `e2d6a7c`) |
-| B — Download progress | indeterminate ProgressBar on Downloads page (UI-level; engine gives no bytes) | ✅ Done (UI-only, documented) |
-| C — Tab reorder | Rust `reorder_to`/`reorder` + `tab_reorder` command (5 tests); TabStrip pointer-event drag-reorder wired through App/TitleBar with `tabReorder` IPC | ✅ Done |
-| D — Documentation | `docs/` deliverables (this set) | ✅ Done |
-| E — Release gates | `cargo audit`, Windows release bundle, final full gate run | ✅ Done — audit clean (0 vulnerabilities, 17 transitive warnings documented in DEPS.md); MSI + NSIS installers built; category fix `d67c8ac`; all gates green |
+| A — Security & Correctness Audit | Capability ACL restrictions, caller guards, navlog cursor management, close-neighbor logic, session atomicity and validation, overlay visibility, tab operations, settings serialization, download prompt flow, favicon origin keys with no-redirect guards, canonical origin parsing, permissions error propagation, DB rename protection, strict CSP, and chrome rebuild on singleton store | [Done] |
+| B — Download Pipeline & UX | Indeterminate progress visualization on the Downloads page with sanitized destination paths and prompt confirmations | [Done] |
+| C — Tab Reorder & Management | Backend `reorder_to` / `reorder` logic, `tab_reorder` IPC command, and pointer-event drag-and-drop tab strip integration | [Done] |
+| D — Authentication & Biometrics | Master password protection with Argon2id hashing, `zeroize` memory safety, exponential backoff rate limiting, native Windows Hello biometric verification via WinRT `UserConsentVerifier`, passkey setup, atomic `auth.json` profile management, and fail-closed IPC gating | [Done] |
+| E — Documentation & Licensing | Comprehensive project documentation across `docs/`, `README.md`, `SECURITY.md`, and official MIT `LICENSE` creation | [Done] |
+| F — Release Verification | Full quality gate pass (`cargo fmt`, `cargo clippy`, `cargo test`, `npm run typecheck`, `npm run build`), dependency security audits, and bundle creation | [Done] |
 
-## Verification snapshot (Phase A–C)
+---
 
-- Rust: 137 tests pass (`cargo test --all-features --locked`); clippy `-D warnings` clean; `cargo fmt --check` clean.
-- Frontend: `tsc --noEmit` clean; `vite build` (production CSP) succeeds.
-- Bundle: `tauri build --debug --no-bundle` and `tauri build --release` (MSI + NSIS) both succeed.
-- `npm audit`: 0 vulnerabilities; `cargo audit`: 0 vulnerabilities.
-- Security invariants pinned by tests: capability files never use `windows:` / grant tab webviews nothing; every command is caller-guarded.
+## Verification Summary
 
-## Release trail (Phases A–E commits)
+- **Rust Test Suite**: Unit, state machine, and security invariant tests pass cleanly (`cargo test --all-features --locked`).
+- **Rust Linters & Formatting**: `cargo clippy --all-targets --all-features --locked -- -D warnings` clean; `cargo fmt --check` clean.
+- **Frontend Quality**: `tsc --noEmit` strict type check clean; `npm run build` succeeds under production CSP rules.
+- **Dependency Audits**: `npm audit` reports 0 vulnerabilities.
+- **Security Invariants**: Capability configuration scans confirm child webviews receive no capabilities; command source scan verifies 100% caller guarding.
 
-`eec794d` fix hardening · `ae3388e` chrome rebuild · `e2d6a7c` lockfile refresh · `613c9ee` download progress UI · `faf55b5` drag-reorder tabs · `5b19a10` docs · `d67c8ac` bundle category fix
+---
 
-## Before shipping
+## Release Checklist
 
-1. Manual smoke test the release bundle (fresh profile: install, launch, create tabs, navigate, download, permission prompt, drag-reorder, restart → session restored).
-2. Tag + CI publish if distributing.
-
-## Post-v1 backlog (not blockers)
-
-- Native download byte progress (WebView2/WebKit hooks) + determinate ProgressBar.
-- e2e suite via `tauri-driver` on Windows layout path.
-- `cargo audit` as a CI job.
-- Web-perf audit of chrome UI (LCP/INP) via `web-perf` skill.
-- Wayland native-path fix tracking upstream tauri#15656.
+1. Execute full quality gate sequence on both Windows and Linux CI runners.
+2. Confirm zero vulnerabilities via dependency audit tooling.
+3. Perform end-to-end smoke verification (fresh install, onboarding, password/biometric lock and unlock, navigation, downloads, tab reordering, restart session restore).
+4. Tag release and trigger automated build pipelines.

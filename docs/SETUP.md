@@ -1,47 +1,69 @@
 # Rowster — Setup
 
-## Prerequisites (all platforms)
+---
 
-- Rust toolchain ≥ 1.85 (edition 2024) — install via rustup
-- Node.js ≥ 20 + npm
-- Git
+## Prerequisites (All Platforms)
 
-## Windows
+- **Rust Toolchain**: Version 1.85 or newer (2024 edition) installed via `rustup`.
+- **Node.js**: Version 20 or newer with `npm`.
+- **Git**: For version control.
 
-1. **WebView2 Runtime** — ships with Windows 11 and is auto-installed on Windows 10 via the Tauri installer. No action needed for most machines.
-2. **MSVC build tools** — `rustup toolchain install stable-msvc` + Visual Studio Build Tools with "Desktop development with C++" workload (or run `winget install Microsoft.VisualStudio.2022.BuildTools` and select the C++ workload).
-3. Nothing else: `webview2-com` and `windows-core` are vendored Rust bindings, no SDK downloads.
+---
 
-## macOS
+## Platform Requirements
 
-1. Xcode Command Line Tools: `xcode-select --install`.
-2. WebKit (WKWebView) is system-provided. Builds on macOS 12+ (aarch64 + x86_64).
-3. Rust targets: default host target is enough for `npm run tauri:build`; use `rustup target add x86_64-apple-darwin` only for cross-arch release builds.
+### Windows
 
-## Linux (Debian/Ubuntu)
+1. **WebView2 Runtime**: Included with Windows 11 and Windows 10 (auto-installed by the Tauri installer if absent).
+2. **MSVC Build Tools**: Visual Studio Build Tools with the "Desktop development with C++" workload installed, or run:
+   ```powershell
+   winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --add Microsoft.VisualStudio.Workload.VCTools"
+   ```
+3. **Rust Toolchain**: `rustup toolchain install stable-msvc`.
 
-Install WebKitGTK and build deps:
+### macOS
 
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+1. **Xcode Command Line Tools**:
+   ```sh
+   xcode-select --install
+   ```
+2. **WebKit**: WKWebView is provided directly by the operating system (macOS 12+ supported).
+
+### Linux (Debian / Ubuntu)
+
+Install WebKitGTK and essential development libraries:
+
+```sh
+sudo apt update && sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev
 ```
 
-For AppImage bundling also: `libfuse2` (or `--appimage-extract-and-run`), and `linuxdeploy` plugins (gtk) if bundling.
+> [!NOTE]
+> Under Wayland environments, if tab positioning anomalies occur due to upstream compositor behavior, enable `linux_compat_mode` in settings or run under X11 / XWayland. See [LIMITATIONS.md](./LIMITATIONS.md) for details.
 
-> ⚠️ Wayland: child-tab bounds mispositioning (tauri#15656) — run under X11 (XWayland) or enable `linux_compat_mode` in settings, which re-asserts bounds on activation. See [`LIMITATIONS.md`](LIMITATIONS.md).
+---
 
-## Theme
+## Theme Generation
 
-The Astryx theme is generated before every build/dev run:
+Rowster uses the Astryx design system. Theme tokens are compiled into CSS:
 
 ```powershell
-npm run theme:build    # generates src/theme/rowsterTheme.ts
+npm run theme:build
 ```
 
-Commit `src/theme/rowsterTheme.ts` when the theme source changes. Both `vite.config.ts` and `tauri.conf.json` carry the production CSP (`img-src favicon:`, `connect-src` policies); keep them in sync.
+---
 
-## Data locations
+## Local Data Storage Locations
 
-- App data dir (Windows): `%APPDATA%\com.rowster.app\` — `rowster.db`, `session.json`, `favicons/`, logs.
-- Logs: `tauri-plugin-log` writes `rowster.log` into the app-data dir; `RUST_LOG=rowster=trace` for verbose tracing in dev.
+- **Windows**: `%APPDATA%\com.rowster.app\`
+- **Linux**: `~/.config/com.rowster.app/`
+- **macOS**: `~/Library/Application Support/com.rowster.app/`
+- **Logs**: File logs are written to `rowster.log` inside the app data directory. Set `RUST_LOG=rowster=trace` for verbose tracing during development.

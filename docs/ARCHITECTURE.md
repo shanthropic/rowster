@@ -1,68 +1,76 @@
 # Rowster — Architecture
 
-Rowster is a privacy-respecting, multi-tab desktop browser built with Rust + Tauri 2.11. This document is the source of truth for the *implementation*; the detailed design rationale lives in [`rowster_complete_architectural_plan.md`](../rowster_complete_architectural_plan.md).
+Rowster is a privacy-focused, multi-tab desktop browser built with Rust and Tauri 2. This document serves as the technical reference for the browser implementation. Design rationale and milestone specifications are documented in [`rowster_complete_architectural_plan.md`](../rowster_complete_architectural_plan.md).
 
-## Process model
+---
 
-Single-process. Rust owns **all canonical browser state**; the frontend is a view over it.
+## Process Model
 
-- **Chrome webview** (label `main`): trusted UI — title bar, tab strip, address bar, settings/history/bookmarks/downloads pages, dialogs. The only webview with IPC capabilities (see `src-tauri/capabilities/main.json`).
-- **Tab webviews** (labels `tab-1`, `tab-2`, …): real native child webviews created with `WebviewBuilder` via the Tauri `unstable` feature. They hold **zero capabilities** — a remote page cannot invoke commands, reach the filesystem, or open windows.
+Rowster operates as a single OS process with strict separation between trusted interface controls and untrusted web content:
 
-## Modules (`src-tauri/src`)
+- **Chrome Webview** (label `main`): The trusted user interface environment rendering the title bar, tab strip, address bar, bookmarks bar, status bar, and internal chrome pages (History, Bookmarks, Downloads, Settings, and Auth screens). This is the only webview configured with Tauri IPC capabilities in `src-tauri/capabilities/main.json`.
+- **Tab Webviews** (labels `tab-1`, `tab-2`, ...): Real native child webviews instantiated via `WebviewBuilder` (using Tauri's `unstable` multi-webview feature). Tab webviews hold zero capabilities, cannot call IPC commands, cannot receive chrome events, and are isolated behind navigation and security policies.
+- **Rust Core**: Authoritative manager of all application state, tab lifecycles, database persistence, session records, security boundaries, and authentication profiles.
+
+---
+
+## Backend Modules (`src-tauri/src`)
 
 | Module | Responsibility |
 |---|---|
-| `app.rs` | Builder wiring, favicon URI handler, setup, session restore |
-| `commands.rs` | IPC command surface; every command starts with `caller::assert_chrome` |
-| `address.rs` | Address-bar input → URL vs. search resolution (`Address::resolve`) |
-| `security/` | Caller guard, navigation policy (dangerous-scheme rejection), capability-scan tests |
-| `tabs/manager.rs` | Tab lifecycle: create/activate/close/reorder/duplicate, session save trigger, engine hooks (navigation, page load, downloads, permissions) |
-| `tabs/tab.rs` | Per-tab state machine (new/used/discarded/sleeping/muted, navlog) |
-| `webview/handle.rs` | `WebviewHandle` abstraction so the manager is unit-testable against a mock |
-| `session.rs` | Atomic session persistence (tmp + fsync + backup rotation) with validation |
-| `downloads.rs` | Download pipeline: sanitize, ask-before-download, finish/cancel/retry, executable guard |
-| `permissions.rs` | `PermissionBroker` (stored > allow-once > prompt), canonical origins |
-| `favicons.rs` | Origin-keyed favicon cache served via `favicon://localhost/<key>.ico` |
-| `find.rs` | Find-in-page JS orchestration |
-| `layout.rs` | Chrome metrics → tab webview bounds math |
-| `db/` + `repos/` | SQLite (WAL) with versioned migrations and per-entity repositories |
-| `settings.rs` | Validated settings model |
-| `events.rs` | Event-name constants (chrome subscribes; tabs cannot) |
-| `error.rs` | `thiserror` error hierarchy, safe-lock helpers |
-| `model.rs` | Core serde types: `TabInfo`, `BrowserWindowInfo`, `BrowserSnapshot`, `MAIN_WEBVIEW_LABEL` / `TAB_WEBVIEW_PREFIX` |
-| `navlog.rs` | Per-tab navigation log (back/forward derivation) |
-| `state.rs` | `AppState` (settings lock, db handle, managers, channels) |
+| `app.rs` | Application setup, builder configuration, internal `favicon://` protocol, session restoration, and startup sequence |
+| `auth.rs` | Authentication manager: Argon2id password hashing, zeroization, exponential rate limiting, Windows Hello WinRT biometric integration, and profile persistence |
+| `commands.rs` | IPC command dispatcher; enforces caller checks (`caller::assert_chrome`) and authentication lock-state gating (`auth.require_unlocked`) |
+| `address.rs` | Address bar input parsing, search query transformation, and URL normalization (`Address::resolve`) |
+| `security/` | Security caller guards (`caller.rs`), scheme-filtering navigation policy (`nav_policy.rs`), and capability configuration unit tests |
+| `tabs/manager.rs` | Tab lifecycle management: creation, activation, closure, reordering, duplication, engine event hooks (navigation, page load, downloads, permissions) |
+| `tabs/tab.rs` | Per-tab state machine (active, discarded/sleeping, muted, navigation log) |
+| `webview/handle.rs` | `WebviewHandle` abstraction allowing tab management logic to be unit tested against mock runtimes |
+| `session.rs` | Atomic session persistence (`session.json` + `session.json.bak` rotation) and snapshot validation |
+| `downloads.rs` | Download pipeline: path sanitization, ask-before-download prompt flow, progress tracking, status transitions, and executable launch confirmation |
+| `permissions.rs` | `PermissionBroker` resolving permission queries against canonical origins and stored policies |
+| `favicons.rs` | Origin-keyed favicon caching and serving via `favicon://localhost/<key>.ico` with strict SSRF / no-redirect guards |
+| `find.rs` | In-page text search orchestration via `window.find` |
+| `layout.rs` | Chrome geometry metrics to child webview bounds calculation |
+| `db/` + `repos/` | SQLite database connection management (WAL mode, versioned migrations) and repositories for history, bookmarks, downloads, and site permissions |
+| `settings.rs` | Validated browser settings schema and serialized write management |
+| `events.rs` | Strongly-typed event name constants dispatched exclusively to the `main` chrome webview |
+| `error.rs` | Structured `thiserror` error hierarchy and safe mutex acquisition helpers |
+| `model.rs` | Serde data models: `TabInfo`, `BrowserWindowInfo`, `BrowserSnapshot`, `MAIN_WEBVIEW_LABEL`, `TAB_WEBVIEW_PREFIX` |
+| `navlog.rs` | Per-tab navigation history and back/forward stack derivation |
+| `state.rs` | `AppState` container holding shared managers, database connection, authentication state, and async channels |
 
-## Concurrency rules
+---
 
-- All commands are `async`; DB work runs on `spawn_blocking`; no std lock is held across `.await`.
-- **Native webview calls never happen under a state lock**: clone the handle, drop the lock, then call.
-- Settings writes are serialized with a tokio mutex (`settings_write`) and persisted *before* success is reported.
-- Session saves are triggered through a channel with an in-process debounce.
-- `tabs_snapshot` events are emitted after every structural change; per-tab events (`tab_created`, `url_changed`, …) update the store incrementally.
+## Authentication & Access Control Lifecycle
 
-## Frontend (`src/`)
+1. **Startup Check**: On application launch, `AuthManager::load` inspects `auth.json` in the app-data directory.
+   - If no profile exists, the phase is `Onboarding`.
+   - If a profile with a password or passkey exists, the phase is `Locked`.
+   - If a profile without a password exists, the phase is `Unlocked`.
+2. **Locked Phase Isolation**: While in `Onboarding` or `Locked` state:
+   - All standard browser IPC commands reject execution immediately with `Error::AuthenticationRequired` or `Error::OnboardingRequired`.
+   - Child tab webviews are hidden and prevented from rendering content or receiving focus.
+   - Only authentication endpoints (`auth_status`, `auth_complete_onboarding`, `auth_unlock_password`, `auth_unlock_passkey`) are processed.
+3. **Unlocking**:
+   - **Password**: Evaluated against stored Argon2id hashes with exponential backoff on failure.
+   - **Biometrics / Windows Hello**: Evaluated via WinRT `UserConsentVerifier` within an apartment runtime.
+4. **Browser Initialization**: Once unlocked, `ensure_browser_started` triggers SQLite initialization, session restore, and child webview display.
 
-- `state.ts` — singleton store via `useSyncExternalStore`, fed by Tauri events + `startup_info` snapshot; view components derive from it. UI-local state (menus, drag, dialogs) stays in React.
-- `App.tsx` — `AppShell` layout: title bar (tabs), navigation bar, bookmark bar, content area (lazy-loaded chrome pages / new-tab / nothing), status bar, error banner, dialogs.
-- `components/AddressBar.tsx` etc. — browser-specific controls custom-built (Astryx provides layout; `chrome.css` holds custom styles using design tokens only).
-- Theme: Astryx `rowsterTheme` (Material You monochrome + OKLCH categorical palette), generated by `npm run theme:build`, mode (system/light/dark) follows settings.
+---
 
-## Event flow
+## Concurrency and State Rules
 
-1. Engine event (page load, download, permission request) → Rust hook in `tabs/manager.rs`.
-2. Rust mutates canonical state, then `events::emit_to_chrome` → `tabs_snapshot` or per-tab event.
-3. `state.ts` updates the store; components re-render; `chrome_layout_changed` reports measured chrome metrics so Rust repositions child webviews.
+- **Asynchronous Execution**: All IPC commands are `async`. Expensive operations (DB queries, password hashing, file I/O) run on `spawn_blocking`.
+- **Lock Discipline**: Mutex locks are held only for memory state mutations and are never held across `.await` points or native webview calls.
+- **Webview Invocation Safety**: Native webview handles are cloned and locks released before executing native engine calls.
+- **Serialized Settings & Profile Writes**: Settings and auth profile changes are serialized via dedicated async mutexes and fsynced to disk prior to command completion.
+- **Event-Driven UI**: Rust pushes state changes to the frontend using scoped events (`tabs_snapshot`, `tab_created`, `url_changed`). The frontend stores no authoritative browser state.
 
-## Security model
+---
 
-Threat model: **every remote site is hostile.** Enforcement points:
+## Frontend Architecture (`src/`)
 
-- Capabilities: `webviews: ["main"]` only (a `windows` match would grant every child). Pinned by a test that fails on regression.
-- `caller::assert_chrome(&webview)` at the top of every command; pinned by a source-scan test (`every_command_is_caller_guarded`) and runtime mock tests (`tests/isolation.rs`, non-Windows).
-- Navigation policy rejects dangerous schemes (`javascript:`, `file:`, …) on every navigation, restore, and bookmark write.
-- CSP: no remote images/fonts/scripts; `img-src` limited to `favicon:`.
-- Download executable opens require a fresh, one-shot native confirmation.
-- Permissions: all deny by default; stored decisions keyed by canonical origin (scheme+host+port).
-- Favicon fetches: no redirects (blocks public→private network hopping), cache keys sanitized.
+- **State Management** (`state.ts`): Singleton store implemented via `useSyncExternalStore`. Populated on initialization via `startup_info` and synchronized live through Tauri events.
+- **Layout Shell** (`App.tsx`): Top-level container managing the TitleBar (tabs & window controls), NavigationBar (history controls, address bar, menu), BookmarkBar, Content viewport, Auth screens, and status overlays.
+- **Design Tokens**: Astryx design system integration with custom token-driven styling (`styles/chrome.css`). No utility CSS compilers or hardcoded pixel values are used.
