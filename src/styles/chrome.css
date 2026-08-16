@@ -429,6 +429,49 @@ input {
   flex-shrink: 0;
 }
 
+/* =========================================================================
+   Internal Browser Pages (Settings, Bookmarks, History, Downloads)
+   ========================================================================= */
+
+.browser-page-header-row {
+  width: 100%;
+}
+
+.browser-page-title-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-cyan);
+  flex-shrink: 0;
+}
+
+.browser-page-heading {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.browser-page-header-search {
+  flex: 1;
+  max-width: 360px;
+  min-width: 180px;
+}
+
+.browser-page-tabs-container {
+  width: 100%;
+  padding-inline: var(--spacing-4);
+}
+
+.browser-page-content-wrapper {
+  width: 100%;
+  margin-inline: auto;
+}
+
 .browser-page-standard,
 .browser-page-wide {
   width: 100%;
@@ -446,6 +489,55 @@ input {
 .browser-page-loading {
   width: 100%;
   min-height: calc(var(--spacing-12) * 4);
+}
+
+/* Floating Save / Revert Bottom Banner in Settings */
+.browser-page-floating-bar-wrap {
+  position: sticky;
+  bottom: var(--spacing-4);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 50;
+  margin-top: var(--spacing-4);
+}
+
+.settings-floating-save-bar {
+  pointer-events: auto;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-emphasized);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-2) var(--spacing-4) var(--spacing-2) var(--spacing-5);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  min-width: 380px;
+  max-width: 540px;
+  width: 100%;
+  animation: slideUpFade var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.download-type-icon-box {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 /* =========================================================================
