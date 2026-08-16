@@ -1,6 +1,6 @@
 [package]
 name = "rowster"
-version = "0.1.0"
+version = "0.0.0"  # DYNAMIC: set by scripts/set-version.mjs from the git tag at release build time (see .github/workflows/release.yml)
 description = "Rowster - a privacy-respecting, multi-tab desktop browser built with Rust + Tauri."
 edition = "2024"
 

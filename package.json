@@ -1,7 +1,7 @@
 {
   "name": "rowster",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Rowster - a privacy-respecting, multi-tab desktop browser built with Rust + Tauri.",
   "license": "MIT",
   "type": "module",
@@ -15,7 +15,8 @@
     "prebuild": "npm run theme:build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "version:set": "node scripts/set-version.mjs"
   },
   "dependencies": {
     "@astryxdesign/cli": "^0.3.0",

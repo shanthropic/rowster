@@ -3,7 +3,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -48,7 +47,7 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: './src-tauri -> target'
 
       - name: Install Node.js
         uses: actions/setup-node@v7
@@ -59,13 +58,41 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Derive version from git tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Tag must be a semver version like v1.2.3 (got: $GITHUB_REF_NAME)"
+            exit 1
+          fi
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version: $VERSION"
+
+      - name: Inject version at build time
+        shell: bash
+        run: npm run version:set "$APP_VERSION"
+
+      - name: Sync Cargo.lock package version
+        working-directory: src-tauri
+        run: cargo update -p rowster
+
+      - name: Verify injected version
+        shell: bash
+        run: |
+          grep -m1 '"version"' package.json
+          grep -m1 '^version' src-tauri/Cargo.toml
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Rowster ${{ github.ref_name }}"
+          tagName: v__VERSION__
+          releaseName: "Rowster v__VERSION__"
+          releaseBody: "See the assets below to download and install this version."
           releaseDraft: true
           prerelease: false
+          uploadUpdaterSignatures: false
           args: ${{ matrix.args }}
