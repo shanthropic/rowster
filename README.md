@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./app-icon.svg" alt="Rowster Logo" width="80" height="80" />
+</p>
+
 # Rowster
 
 A privacy-respecting, multi-tab desktop browser built with **Rust + Tauri 2**
