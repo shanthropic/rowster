@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Compass, KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
+import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -9,6 +9,7 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { RowsterIcon } from "./common/RowsterIcon";
 import type { AuthStatus } from "../types";
 import {
   authCompleteOnboarding,
@@ -146,7 +147,7 @@ function OnboardingScreen({ status, onAuthenticated }: FlowProps) {
         <div className="onboarding-card">
           <HStack justify="between" align="center">
             <div className="onboarding-brand-icon">
-              <Compass size={22} aria-hidden="true" />
+              <RowsterIcon size={24} aria-hidden="true" />
             </div>
             <div className="onboarding-step-pills" aria-label="Setup progress">
               <div
