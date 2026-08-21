@@ -19,7 +19,7 @@
     "version:set": "node scripts/set-version.mjs"
   },
   "dependencies": {
-    "@astryxdesign/cli": "^0.3.0",
+    "@astryxdesign/cli": "^0.4.3",
     "@astryxdesign/core": "^0.3.0",
     "@astryxdesign/theme-neutral": "^0.3.0",
     "@stylexjs/stylex": "^0.19.0",
